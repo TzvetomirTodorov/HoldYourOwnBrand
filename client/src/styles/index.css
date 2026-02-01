@@ -1,0 +1,148 @@
+/* 
+ * Hold Your Own Brand - Main Stylesheet
+ * 
+ * This file imports TailwindCSS utilities and defines custom styles.
+ * The brand aesthetic is a fusion of California Beach and Harlem Street.
+ */
+
+/* TailwindCSS base layers */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  /* Smooth scrolling for the whole page */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Default body styles */
+  body {
+    @apply font-body text-street-900 bg-white antialiased;
+  }
+
+  /* Headline styles using the display font */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-wide;
+  }
+
+  /* Focus styles for accessibility */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-ocean-600;
+  }
+
+  /* Selection color matching brand */
+  ::selection {
+    @apply bg-sunset-500 text-white;
+  }
+}
+
+/* Reusable component styles */
+@layer components {
+  /* Primary button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-6 py-3
+           bg-ocean-950 text-white font-display text-lg tracking-wider uppercase
+           hover:bg-ocean-800 
+           focus:outline-none focus:ring-2 focus:ring-ocean-600 focus:ring-offset-2
+           transition-colors duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-6 py-3
+           bg-white text-ocean-950 font-display text-lg tracking-wider uppercase
+           border-2 border-ocean-950
+           hover:bg-ocean-950 hover:text-white
+           focus:outline-none focus:ring-2 focus:ring-ocean-600 focus:ring-offset-2
+           transition-colors duration-200;
+  }
+
+  /* Accent button */
+  .btn-accent {
+    @apply inline-flex items-center justify-center px-6 py-3
+           bg-sunset-600 text-white font-display text-lg tracking-wider uppercase
+           hover:bg-sunset-700
+           focus:outline-none focus:ring-2 focus:ring-sunset-500 focus:ring-offset-2
+           transition-colors duration-200;
+  }
+
+  /* Text input */
+  .input {
+    @apply block w-full px-4 py-3
+           border border-street-300 rounded-none
+           text-street-900 placeholder-street-400
+           focus:border-ocean-600 focus:ring-1 focus:ring-ocean-600
+           transition-colors duration-200;
+  }
+
+  /* Product card */
+  .product-card {
+    @apply group relative overflow-hidden bg-white;
+  }
+
+  .product-card-image {
+    @apply aspect-square w-full object-cover
+           group-hover:scale-105 transition-transform duration-500;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2 py-1
+           text-xs font-medium uppercase tracking-wider;
+  }
+
+  .badge-new {
+    @apply badge bg-palm-600 text-white;
+  }
+
+  .badge-sale {
+    @apply badge bg-blood-600 text-white;
+  }
+
+  /* Container with consistent padding */
+  .container-custom {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Section spacing */
+  .section {
+    @apply py-16 sm:py-24;
+  }
+
+  /* Link styles */
+  .link {
+    @apply text-ocean-700 hover:text-ocean-950 underline-offset-4 hover:underline
+           transition-colors duration-200;
+  }
+}
+
+/* Utility classes */
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-ocean-600 to-sunset-600;
+  }
+
+  /* Aspect ratios */
+  .aspect-product {
+    aspect-ratio: 3 / 4;
+  }
+
+  /* Animation delays for staggered effects */
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+}
