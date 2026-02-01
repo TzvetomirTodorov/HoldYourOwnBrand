@@ -80,7 +80,7 @@
 
   /* Product card */
   .product-card {
-    @apply group relative overflow-hidden bg-white;
+    @apply relative overflow-hidden bg-white;
   }
 
   .product-card-image {
