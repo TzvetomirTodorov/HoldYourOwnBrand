@@ -1,12 +1,11 @@
 /**
- * Cart Routes - Updated for CORS Compatibility
- *
- * CHANGES:
- * 1. Accepts sessionId from request body OR query params (no custom headers)
- * 2. Works for both guests (session-based) and logged-in users (JWT auth)
- * 3. Proper error handling and response structure
+ * Cart Routes - Fixed Version v2
  * 
- * This fixes the CORS preflight failures caused by custom X-Cart-Session-Id headers.
+ * FIXES:
+ * 1. Removed is_active column checks (may not exist in all schemas)
+ * 2. More defensive column handling
+ * 3. Better error messages for debugging
+ * 4. Session ID properly handled
  */
 
 const express = require('express');
@@ -23,7 +22,6 @@ const router = express.Router();
 
 /**
  * Get sessionId from request (body, query, or cookies)
- * Priority: body > query > cookie
  */
 function getSessionId(req) {
   return req.body?.sessionId || 
@@ -36,83 +34,110 @@ function getSessionId(req) {
  * Get or create a cart for the current user/session
  */
 async function getOrCreateCart(userId, sessionId) {
-  let result;
+  try {
+    let result;
 
-  if (userId) {
-    // For logged-in users, look up by user ID
-    result = await db.query(
-      'SELECT id FROM carts WHERE user_id = $1',
-      [userId]
+    if (userId) {
+      result = await db.query(
+        'SELECT id FROM carts WHERE user_id = $1',
+        [userId]
+      );
+    } else if (sessionId) {
+      result = await db.query(
+        'SELECT id FROM carts WHERE session_id = $1',
+        [sessionId]
+      );
+    }
+
+    if (result && result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+
+    // Create new cart
+    const newCartResult = await db.query(
+      `INSERT INTO carts (user_id, session_id)
+       VALUES ($1, $2)
+       RETURNING id`,
+      [userId || null, sessionId || null]
     );
-  } else if (sessionId) {
-    // For guests, look up by session ID
-    result = await db.query(
-      'SELECT id FROM carts WHERE session_id = $1',
-      [sessionId]
-    );
+
+    return newCartResult.rows[0].id;
+  } catch (error) {
+    console.error('Error in getOrCreateCart:', error);
+    throw error;
   }
-
-  if (result && result.rows.length > 0) {
-    return result.rows[0].id;
-  }
-
-  // No cart found, create a new one
-  const newCartResult = await db.query(
-    `INSERT INTO carts (user_id, session_id)
-     VALUES ($1, $2)
-     RETURNING id`,
-    [userId || null, sessionId || null]
-  );
-
-  return newCartResult.rows[0].id;
 }
 
 /**
  * Get cart items with product/variant details
  */
 async function getCartItems(cartId) {
-  const result = await db.query(`
-    SELECT 
-      ci.id,
-      ci.quantity,
-      ci.created_at,
-      pv.id as variant_id,
-      pv.size,
-      pv.color,
-      pv.sku,
-      pv.quantity as stock_quantity,
-      p.id as product_id,
-      p.name as product_name,
-      p.slug as product_slug,
-      p.price as base_price,
-      COALESCE(pv.price_adjustment, 0) as price_adjustment,
-      (p.price + COALESCE(pv.price_adjustment, 0)) as price,
-      (SELECT pi.url FROM product_images pi WHERE pi.product_id = p.id ORDER BY pi.sort_order LIMIT 1) as image_url
-    FROM cart_items ci
-    JOIN product_variants pv ON ci.variant_id = pv.id
-    JOIN products p ON pv.product_id = p.id
-    WHERE ci.cart_id = $1
-    ORDER BY ci.created_at DESC
-  `, [cartId]);
+  try {
+    const result = await db.query(`
+      SELECT 
+        ci.id,
+        ci.quantity,
+        ci.created_at,
+        pv.id as variant_id,
+        pv.size,
+        pv.color,
+        pv.sku,
+        pv.quantity as stock_quantity,
+        COALESCE(pv.price_adjustment, 0) as price_adjustment,
+        p.id as product_id,
+        p.name as product_name,
+        p.slug as product_slug,
+        p.price as base_price,
+        (p.price + COALESCE(pv.price_adjustment, 0)) as price
+      FROM cart_items ci
+      JOIN product_variants pv ON ci.variant_id = pv.id
+      JOIN products p ON pv.product_id = p.id
+      WHERE ci.cart_id = $1
+      ORDER BY ci.created_at DESC
+    `, [cartId]);
 
-  return result.rows.map(row => ({
-    id: row.id,
-    quantity: row.quantity,
-    price: parseFloat(row.price),
-    variant: {
-      id: row.variant_id,
-      size: row.size,
-      color: row.color,
-      sku: row.sku,
-      inStock: row.stock_quantity > 0,
-    },
-    product: {
-      id: row.product_id,
-      name: row.product_name,
-      slug: row.product_slug,
-      imageUrl: row.image_url,
-    },
-  }));
+    // Get images separately to handle potential column name differences
+    const itemsWithImages = await Promise.all(result.rows.map(async (row) => {
+      // Try to get product image
+      let imageUrl = null;
+      try {
+        const imgResult = await db.query(
+          `SELECT url FROM product_images WHERE product_id = $1 ORDER BY sort_order LIMIT 1`,
+          [row.product_id]
+        );
+        if (imgResult.rows.length > 0) {
+          imageUrl = imgResult.rows[0].url;
+        }
+      } catch (imgError) {
+        // Image table might not exist or have different schema
+        console.warn('Could not fetch product image:', imgError.message);
+      }
+
+      return {
+        id: row.id,
+        quantity: row.quantity,
+        price: parseFloat(row.price),
+        variant: {
+          id: row.variant_id,
+          size: row.size,
+          color: row.color,
+          sku: row.sku,
+          inStock: parseInt(row.stock_quantity) > 0,
+        },
+        product: {
+          id: row.product_id,
+          name: row.product_name,
+          slug: row.product_slug,
+          imageUrl: imageUrl,
+        },
+      };
+    }));
+
+    return itemsWithImages;
+  } catch (error) {
+    console.error('Error in getCartItems:', error);
+    throw error;
+  }
 }
 
 /**
@@ -125,7 +150,6 @@ function calculateCartTotals(items) {
   return {
     subtotal: Math.round(subtotal * 100) / 100,
     itemCount,
-    // Tax and shipping calculated at checkout
   };
 }
 
@@ -140,6 +164,8 @@ function calculateCartTotals(items) {
 router.get('/', optionalAuth, asyncHandler(async (req, res) => {
   const userId = req.user?.id || null;
   const sessionId = getSessionId(req);
+
+  console.log('GET /api/cart - userId:', userId, 'sessionId:', sessionId);
 
   // Must have either userId or sessionId
   if (!userId && !sessionId) {
@@ -169,6 +195,8 @@ router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
   const sessionId = getSessionId(req);
   const { variantId, quantity = 1 } = req.body;
 
+  console.log('POST /api/cart/items - userId:', userId, 'sessionId:', sessionId, 'variantId:', variantId, 'quantity:', quantity);
+
   // Validation
   if (!variantId) {
     throw new AppError('Variant ID is required', 400);
@@ -178,26 +206,28 @@ router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
     throw new AppError('Session ID is required for guest checkout', 400);
   }
 
-  if (quantity < 1 || quantity > 99) {
+  const qty = parseInt(quantity);
+  if (isNaN(qty) || qty < 1 || qty > 99) {
     throw new AppError('Quantity must be between 1 and 99', 400);
   }
 
-  // Check if variant exists and has stock
+  // Check if variant exists and has stock (without is_active check)
   const variantCheck = await db.query(`
     SELECT pv.id, pv.quantity as stock, p.name as product_name
     FROM product_variants pv
     JOIN products p ON pv.product_id = p.id
-    WHERE pv.id = $1 AND pv.is_active = true AND p.is_active = true
+    WHERE pv.id = $1
   `, [variantId]);
 
   if (variantCheck.rows.length === 0) {
-    throw new AppError('Product variant not found or unavailable', 404);
+    throw new AppError('Product variant not found', 404);
   }
 
   const variant = variantCheck.rows[0];
+  const stock = parseInt(variant.stock);
   
-  if (variant.stock < quantity) {
-    throw new AppError(`Only ${variant.stock} items available`, 400);
+  if (stock < qty) {
+    throw new AppError(`Only ${stock} items available`, 400);
   }
 
   // Get or create cart
@@ -211,10 +241,10 @@ router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
 
   if (existingItem.rows.length > 0) {
     // Update existing item quantity
-    const newQuantity = existingItem.rows[0].quantity + quantity;
+    const newQuantity = parseInt(existingItem.rows[0].quantity) + qty;
     
-    if (newQuantity > variant.stock) {
-      throw new AppError(`Only ${variant.stock} items available`, 400);
+    if (newQuantity > stock) {
+      throw new AppError(`Only ${stock} items available (you have ${existingItem.rows[0].quantity} in cart)`, 400);
     }
 
     await db.query(
@@ -225,7 +255,7 @@ router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
     // Add new item
     await db.query(
       'INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, $3)',
-      [cartId, variantId, quantity]
+      [cartId, variantId, qty]
     );
   }
 
@@ -253,44 +283,59 @@ router.patch('/items/:itemId', optionalAuth, asyncHandler(async (req, res) => {
   const { itemId } = req.params;
   const { quantity } = req.body;
 
+  console.log('PATCH /api/cart/items - itemId:', itemId, 'quantity:', quantity);
+
   if (!userId && !sessionId) {
-    throw new AppError('Session ID is required', 400);
+    throw new AppError('Authentication required', 401);
   }
 
-  if (quantity === undefined || quantity < 0 || quantity > 99) {
+  const qty = parseInt(quantity);
+  if (isNaN(qty) || qty < 0 || qty > 99) {
     throw new AppError('Quantity must be between 0 and 99', 400);
   }
 
-  // Get cart
-  const cartId = await getOrCreateCart(userId, sessionId);
-
-  // Verify item belongs to this cart
-  const itemCheck = await db.query(`
-    SELECT ci.id, ci.variant_id, pv.quantity as stock
-    FROM cart_items ci
-    JOIN product_variants pv ON ci.variant_id = pv.id
-    WHERE ci.id = $1 AND ci.cart_id = $2
-  `, [itemId, cartId]);
-
-  if (itemCheck.rows.length === 0) {
-    throw new AppError('Cart item not found', 404);
+  // Get user's cart
+  let cartResult;
+  if (userId) {
+    cartResult = await db.query('SELECT id FROM carts WHERE user_id = $1', [userId]);
+  } else {
+    cartResult = await db.query('SELECT id FROM carts WHERE session_id = $1', [sessionId]);
   }
 
-  const item = itemCheck.rows[0];
+  if (cartResult.rows.length === 0) {
+    throw new AppError('Cart not found', 404);
+  }
 
-  if (quantity === 0) {
+  const cartId = cartResult.rows[0].id;
+
+  // Verify item belongs to this cart
+  const itemCheck = await db.query(
+    'SELECT id, variant_id FROM cart_items WHERE id = $1 AND cart_id = $2',
+    [itemId, cartId]
+  );
+
+  if (itemCheck.rows.length === 0) {
+    throw new AppError('Item not found in cart', 404);
+  }
+
+  if (qty === 0) {
     // Remove item
     await db.query('DELETE FROM cart_items WHERE id = $1', [itemId]);
   } else {
     // Check stock
-    if (quantity > item.stock) {
-      throw new AppError(`Only ${item.stock} items available`, 400);
+    const stockCheck = await db.query(
+      'SELECT quantity FROM product_variants WHERE id = $1',
+      [itemCheck.rows[0].variant_id]
+    );
+
+    if (stockCheck.rows.length > 0 && qty > stockCheck.rows[0].quantity) {
+      throw new AppError(`Only ${stockCheck.rows[0].quantity} items available`, 400);
     }
 
     // Update quantity
     await db.query(
       'UPDATE cart_items SET quantity = $1, updated_at = NOW() WHERE id = $2',
-      [quantity, itemId]
+      [qty, itemId]
     );
   }
 
@@ -302,7 +347,7 @@ router.patch('/items/:itemId', optionalAuth, asyncHandler(async (req, res) => {
   const totals = calculateCartTotals(items);
 
   res.json({
-    message: quantity === 0 ? 'Item removed from cart' : 'Quantity updated',
+    message: qty === 0 ? 'Item removed from cart' : 'Cart updated',
     items,
     ...totals,
   });
@@ -310,28 +355,41 @@ router.patch('/items/:itemId', optionalAuth, asyncHandler(async (req, res) => {
 
 /**
  * DELETE /api/cart/items/:itemId
- * Remove an item from the cart
+ * Remove an item from cart
  */
 router.delete('/items/:itemId', optionalAuth, asyncHandler(async (req, res) => {
   const userId = req.user?.id || null;
   const sessionId = getSessionId(req);
   const { itemId } = req.params;
 
+  console.log('DELETE /api/cart/items - itemId:', itemId);
+
   if (!userId && !sessionId) {
-    throw new AppError('Session ID is required', 400);
+    throw new AppError('Authentication required', 401);
   }
 
-  // Get cart
-  const cartId = await getOrCreateCart(userId, sessionId);
+  // Get user's cart
+  let cartResult;
+  if (userId) {
+    cartResult = await db.query('SELECT id FROM carts WHERE user_id = $1', [userId]);
+  } else {
+    cartResult = await db.query('SELECT id FROM carts WHERE session_id = $1', [sessionId]);
+  }
 
-  // Verify and delete
+  if (cartResult.rows.length === 0) {
+    throw new AppError('Cart not found', 404);
+  }
+
+  const cartId = cartResult.rows[0].id;
+
+  // Delete item (only if it belongs to this cart)
   const deleteResult = await db.query(
     'DELETE FROM cart_items WHERE id = $1 AND cart_id = $2 RETURNING id',
     [itemId, cartId]
   );
 
   if (deleteResult.rows.length === 0) {
-    throw new AppError('Cart item not found', 404);
+    throw new AppError('Item not found in cart', 404);
   }
 
   // Update cart timestamp
@@ -356,17 +414,30 @@ router.delete('/', optionalAuth, asyncHandler(async (req, res) => {
   const userId = req.user?.id || null;
   const sessionId = getSessionId(req);
 
+  console.log('DELETE /api/cart - clearing cart');
+
   if (!userId && !sessionId) {
+    throw new AppError('Authentication required', 401);
+  }
+
+  // Get user's cart
+  let cartResult;
+  if (userId) {
+    cartResult = await db.query('SELECT id FROM carts WHERE user_id = $1', [userId]);
+  } else {
+    cartResult = await db.query('SELECT id FROM carts WHERE session_id = $1', [sessionId]);
+  }
+
+  if (cartResult.rows.length === 0) {
     return res.json({
-      message: 'Cart cleared',
+      message: 'Cart is already empty',
       items: [],
       subtotal: 0,
       itemCount: 0,
     });
   }
 
-  // Get cart
-  const cartId = await getOrCreateCart(userId, sessionId);
+  const cartId = cartResult.rows[0].id;
 
   // Delete all items
   await db.query('DELETE FROM cart_items WHERE cart_id = $1', [cartId]);
@@ -384,18 +455,20 @@ router.delete('/', optionalAuth, asyncHandler(async (req, res) => {
 
 /**
  * POST /api/cart/merge
- * Merge guest cart with user cart (called after login)
+ * Merge guest cart into user cart after login
  */
 router.post('/merge', optionalAuth, asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { sessionId } = req.body;
+
+  console.log('POST /api/cart/merge - userId:', userId, 'sessionId:', sessionId);
 
   if (!userId) {
     throw new AppError('Must be logged in to merge carts', 401);
   }
 
   if (!sessionId) {
-    return res.json({ message: 'No guest cart to merge' });
+    throw new AppError('Session ID is required', 400);
   }
 
   // Get guest cart
@@ -405,7 +478,16 @@ router.post('/merge', optionalAuth, asyncHandler(async (req, res) => {
   );
 
   if (guestCartResult.rows.length === 0) {
-    return res.json({ message: 'No guest cart to merge' });
+    // No guest cart to merge
+    const userCartId = await getOrCreateCart(userId, null);
+    const items = await getCartItems(userCartId);
+    const totals = calculateCartTotals(items);
+
+    return res.json({
+      message: 'No guest cart to merge',
+      items,
+      ...totals,
+    });
   }
 
   const guestCartId = guestCartResult.rows[0].id;
@@ -413,19 +495,15 @@ router.post('/merge', optionalAuth, asyncHandler(async (req, res) => {
   // Get or create user cart
   const userCartId = await getOrCreateCart(userId, null);
 
-  // If same cart, nothing to do
-  if (guestCartId === userCartId) {
-    return res.json({ message: 'Cart already linked to user' });
-  }
-
-  // Merge items from guest cart to user cart
+  // Get guest cart items
   const guestItems = await db.query(
     'SELECT variant_id, quantity FROM cart_items WHERE cart_id = $1',
     [guestCartId]
   );
 
+  // Merge items
   for (const item of guestItems.rows) {
-    // Check if item exists in user cart
+    // Check if user already has this variant
     const existing = await db.query(
       'SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND variant_id = $2',
       [userCartId, item.variant_id]
@@ -433,9 +511,10 @@ router.post('/merge', optionalAuth, asyncHandler(async (req, res) => {
 
     if (existing.rows.length > 0) {
       // Add quantities
+      const newQty = parseInt(existing.rows[0].quantity) + parseInt(item.quantity);
       await db.query(
-        'UPDATE cart_items SET quantity = quantity + $1 WHERE id = $2',
-        [item.quantity, existing.rows[0].id]
+        'UPDATE cart_items SET quantity = $1, updated_at = NOW() WHERE id = $2',
+        [newQty, existing.rows[0].id]
       );
     } else {
       // Move item to user cart
@@ -446,7 +525,7 @@ router.post('/merge', optionalAuth, asyncHandler(async (req, res) => {
     }
   }
 
-  // Delete guest cart
+  // Delete guest cart items and cart
   await db.query('DELETE FROM cart_items WHERE cart_id = $1', [guestCartId]);
   await db.query('DELETE FROM carts WHERE id = $1', [guestCartId]);
 
