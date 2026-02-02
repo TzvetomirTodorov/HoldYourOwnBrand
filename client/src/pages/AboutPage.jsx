@@ -407,7 +407,7 @@ export default function AboutPage() {
             Join the movement. Wear your story. Build your legacy.
           </p>
           <div style={styles.ctaButtons}>
-            <Link to="/shop" style={styles.ctaPrimary}>
+            <Link to="/products" style={styles.ctaPrimary}>
               SHOP THE COLLECTION
               <ArrowIcon />
             </Link>
