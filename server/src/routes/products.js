@@ -221,14 +221,22 @@ router.get('/featured', optionalAuth, asyncHandler(async (req, res) => {
 }));
 
 /**
- * GET /api/products/:id
+ * GET /api/products/:idOrSlug
  * 
- * Get a single product by ID with full details.
+ * Get a single product by ID (UUID) or slug with full details.
+ * FIXED: Now handles both UUID and slug lookups for flexible routing.
  */
-router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
-  const { id } = req.params;
+router.get('/:idOrSlug', optionalAuth, asyncHandler(async (req, res) => {
+  const { idOrSlug } = req.params;
+  
+  // Detect if it's a UUID or a slug
+  // UUIDs have the format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+  
+  // Build WHERE clause based on identifier type
+  const whereClause = isUUID ? 'p.id = $1' : 'p.slug = $1';
 
-  // Get product details - FIXED: uses p.image_url
+  // Get product details - FIXED: uses p.image_url and supports slug lookup
   const productQuery = `
     SELECT 
       p.*,
@@ -243,10 +251,10 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
       p.image_url
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.id = $1 AND p.status = 'active'
+    WHERE ${whereClause} AND p.status = 'active'
   `;
 
-  const productResult = await db.query(productQuery, [id]);
+  const productResult = await db.query(productQuery, [idOrSlug]);
 
   if (productResult.rows.length === 0) {
     return res.status(404).json({ 
@@ -264,7 +272,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
     WHERE product_id = $1
     ORDER BY sort_order
   `;
-  const imagesResult = await db.query(imagesQuery, [id]);
+  const imagesResult = await db.query(imagesQuery, [product.id]);
   
   // Use product_images if available, otherwise use main image_url
   let images = imagesResult.rows;
@@ -286,7 +294,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
     WHERE product_id = $1 AND is_active = true
     ORDER BY size, color
   `;
-  const variantsResult = await db.query(variantsQuery, [id]);
+  const variantsResult = await db.query(variantsQuery, [product.id]);
 
   // Format response
   res.json({
