@@ -1,14 +1,13 @@
 /**
- * Product Card Component
- *
- * A reusable card for displaying products in grid layouts throughout the site.
- * This component is used on the homepage, category pages, and search results.
+ * Product Card Component - FIXED VERSION
  *
  * Features:
- * - Lazy loading images for performance
- * - Hover effects with smooth CSS transforms
- * - Wishlist button (heart) - appears on hover, toggles wishlist via API
- * - Quick add-to-cart button (+) - adds default variant to cart without opening detail page
+ * - Wishlist button (heart)
+ * - Quick add-to-cart button (+) - NOW HANDLES MISSING VARIANT DATA
+ * 
+ * FIX: Product listing pages don't load variant data, so we need to either:
+ * 1. Fetch the product details first to get variant ID, OR
+ * 2. Let the backend handle null variantId by selecting the default variant
  */
 
 import { useState } from 'react';
@@ -16,27 +15,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Heart, Plus, Check, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
-import { wishlistAPI } from '../../services/api';
+import { wishlistAPI, productsAPI } from '../../services/api';
 
 function ProductCard({ product, onWishlistChange }) {
-  // Track local wishlist state (optimistic UI)
   const [isWishlisted, setIsWishlisted] = useState(product.isWishlisted || false);
   const [isWishlistLoading, setIsWishlistLoading] = useState(false);
-  
-  // Track add-to-cart state
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
 
-  // Get auth state and cart actions
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const addItem = useCartStore((state) => state.addItem);
   const navigate = useNavigate();
 
-  /**
-   * Handle wishlist toggle
-   * - If not logged in, redirect to login
-   * - If logged in, add/remove from wishlist via API
-   */
+  // Handle wishlist toggle
   const handleWishlistClick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -47,7 +38,6 @@ function ProductCard({ product, onWishlistChange }) {
     }
 
     if (isWishlistLoading) return;
-
     setIsWishlistLoading(true);
 
     try {
@@ -58,7 +48,6 @@ function ProductCard({ product, onWishlistChange }) {
         await wishlistAPI.add(product.id);
         setIsWishlisted(true);
       }
-
       if (onWishlistChange) {
         onWishlistChange(product.id, !isWishlisted);
       }
@@ -71,38 +60,59 @@ function ProductCard({ product, onWishlistChange }) {
 
   /**
    * Handle quick add-to-cart
-   * - Uses the first/default variant if available
-   * - Shows brief success state before resetting
+   * 
+   * FIXED: Product cards from listing pages don't have variants loaded.
+   * We now fetch the product details first to get the default variant ID,
+   * OR pass null and let the backend select the default variant.
    */
   const handleQuickAddToCart = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (isAddingToCart) return;
-
+    if (isAddingToCart || product.isOutOfStock) return;
     setIsAddingToCart(true);
 
     try {
-      // Get the default variant (first one) or use product ID if no variants
-      const variantId = product.variants?.[0]?.id || product.defaultVariantId || null;
-      
-      // Add to cart - the cartStore handles the API call
+      let variantId = null;
+
+      // Check if we already have variants data
+      if (product.variants && product.variants.length > 0) {
+        variantId = product.variants[0].id;
+      } else if (product.defaultVariantId) {
+        variantId = product.defaultVariantId;
+      } else {
+        // Fetch the product to get its default variant
+        // This is necessary because listing pages don't include variant data
+        try {
+          const response = await productsAPI.getBySlug(product.slug);
+          const fullProduct = response.data.product || response.data;
+          
+          if (fullProduct.variants && fullProduct.variants.length > 0) {
+            variantId = fullProduct.variants[0].id;
+          }
+        } catch (fetchError) {
+          console.warn('Could not fetch product details, trying without variant:', fetchError);
+          // Will try to add with null variantId - backend should handle it
+        }
+      }
+
+      // Add to cart
       await addItem(product.id, variantId, 1);
       
-      // Show success state briefly
+      // Show success state
       setJustAdded(true);
       setTimeout(() => setJustAdded(false), 1500);
       
     } catch (error) {
       console.error('Quick add to cart failed:', error);
-      // Could show error toast here
+      // Could show a toast notification here
     } finally {
       setIsAddingToCart(false);
     }
   };
 
   return (
-    <div className="product-card group">
+    <div className="product-card group relative">
       <Link to={`/products/${product.slug}`} className="block">
         {/* Image Container */}
         <div className="relative aspect-product overflow-hidden bg-street-100">
