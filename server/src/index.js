@@ -40,6 +40,7 @@ const app = express();
 
 // Helmet adds various HTTP headers that help protect against common attacks
 // like XSS, clickjacking, and other code injection attacks
+app.set('trust proxy', 1);
 app.use(helmet());
 
 // Configure CORS (Cross-Origin Resource Sharing)
