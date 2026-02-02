@@ -13,6 +13,7 @@ const authRoutes = require('./routes/auth');
 const productsRoutes = require('./routes/products');
 const categoriesRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
+const checkoutRoutes = require('./routes/checkout');
 const ordersRoutes = require('./routes/orders');
 const usersRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
