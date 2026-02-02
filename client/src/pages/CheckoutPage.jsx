@@ -13,7 +13,14 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
-import { ShoppingBag, ArrowLeft, CheckCircle, Loader2, MapPin } from 'lucide-react';
+import validator from 'validator';
+import { ShoppingBag, ArrowLeft, CheckCircle, Loader2, MapPin, AlertCircle } from 'lucide-react';
+
+// Email sanitization helper
+const sanitizeEmail = (email) => {
+  if (!email) return '';
+  return email.trim().toLowerCase();
+};
 import { useCartStore } from '../store/cartStore';
 import { useAuthStore } from '../store/authStore';
 import api from '../services/api';
@@ -229,6 +236,7 @@ function CheckoutPage() {
   const [orderNumber, setOrderNumber] = useState('');
   const [orderSummary, setOrderSummary] = useState(null);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   
   // Form state
   const [shippingAddress, setShippingAddress] = useState({
@@ -293,26 +301,51 @@ function CheckoutPage() {
   const handleShippingSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
     setIsLoading(true);
 
     try {
+      // Sanitize email
+      const cleanEmail = sanitizeEmail(shippingAddress.email);
+      
       // Validate required fields
       const required = ['firstName', 'lastName', 'email', 'address1', 'city', 'state', 'zipCode'];
+      const errors = {};
+      
       for (const field of required) {
-        if (!shippingAddress[field]) {
-          throw new Error(`${field.replace(/([A-Z])/g, ' $1').trim()} is required`);
+        if (!shippingAddress[field]?.trim()) {
+          errors[field] = `${field.replace(/([A-Z])/g, ' $1').trim()} is required`;
         }
+      }
+
+      // Validate email format
+      if (cleanEmail && !validator.isEmail(cleanEmail)) {
+        errors.email = 'Please enter a valid email address';
       }
 
       // Validate phone if provided
       if (shippingAddress.phone && !isValidPhoneNumber(shippingAddress.phone)) {
-        throw new Error('Please enter a valid phone number');
+        errors.phone = 'Please enter a valid phone number';
       }
+
+      // Validate ZIP code format (US)
+      if (shippingAddress.zipCode && !validator.isPostalCode(shippingAddress.zipCode, 'US')) {
+        errors.zipCode = 'Please enter a valid ZIP code';
+      }
+
+      // If there are validation errors, show them
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        throw new Error('Please fix the errors below');
+      }
+
+      // Update state with sanitized email
+      setShippingAddress(prev => ({ ...prev, email: cleanEmail }));
 
       // Create payment intent
       const response = await api.post('/checkout/create-payment-intent', {
-        shippingAddress,
-        email: shippingAddress.email,
+        shippingAddress: { ...shippingAddress, email: cleanEmail },
+        email: cleanEmail,
         sessionId: getSessionId(),
       });
 
@@ -461,10 +494,29 @@ function CheckoutPage() {
                   <input
                     type="email"
                     value={shippingAddress.email}
-                    onChange={updateField('email')}
-                    className="input w-full"
+                    onChange={(e) => {
+                      updateField('email')(e);
+                      // Clear error when user starts typing
+                      if (fieldErrors.email) {
+                        setFieldErrors(prev => ({ ...prev, email: null }));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // Validate on blur
+                      const clean = sanitizeEmail(e.target.value);
+                      if (clean && !validator.isEmail(clean)) {
+                        setFieldErrors(prev => ({ ...prev, email: 'Please enter a valid email address' }));
+                      }
+                    }}
+                    className={`input w-full ${fieldErrors.email ? 'border-blood-500 focus:border-blood-500 focus:ring-blood-200' : ''}`}
                     required
                   />
+                  {fieldErrors.email && (
+                    <p className="mt-1 text-sm text-blood-600 flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      {fieldErrors.email}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -473,10 +525,21 @@ function CheckoutPage() {
                     international={false}
                     defaultCountry="US"
                     value={shippingAddress.phone}
-                    onChange={(value) => setShippingAddress(prev => ({ ...prev, phone: value || '' }))}
-                    className="phone-input-wrapper"
+                    onChange={(value) => {
+                      setShippingAddress(prev => ({ ...prev, phone: value || '' }));
+                      if (fieldErrors.phone) {
+                        setFieldErrors(prev => ({ ...prev, phone: null }));
+                      }
+                    }}
+                    className={`phone-input-wrapper ${fieldErrors.phone ? 'phone-input-error' : ''}`}
                     placeholder="(555) 123-4567"
                   />
+                  {fieldErrors.phone && (
+                    <p className="mt-1 text-sm text-blood-600 flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      {fieldErrors.phone}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -531,10 +594,21 @@ function CheckoutPage() {
                     <input
                       type="text"
                       value={shippingAddress.zipCode}
-                      onChange={updateField('zipCode')}
-                      className="input w-full"
+                      onChange={(e) => {
+                        updateField('zipCode')(e);
+                        if (fieldErrors.zipCode) {
+                          setFieldErrors(prev => ({ ...prev, zipCode: null }));
+                        }
+                      }}
+                      className={`input w-full ${fieldErrors.zipCode ? 'border-blood-500' : ''}`}
                       required
                     />
+                    {fieldErrors.zipCode && (
+                      <p className="mt-1 text-sm text-blood-600 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {fieldErrors.zipCode}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">Country</label>
@@ -700,6 +774,16 @@ function CheckoutPage() {
         .phone-input-wrapper .PhoneInputInput:focus {
           border-color: #0B1D3A;
           box-shadow: 0 0 0 3px rgba(11, 29, 58, 0.1);
+        }
+        .phone-input-error .PhoneInputCountry {
+          border-color: #B91C1C;
+        }
+        .phone-input-error .PhoneInputInput {
+          border-color: #B91C1C;
+        }
+        .phone-input-error .PhoneInputInput:focus {
+          border-color: #B91C1C;
+          box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.1);
         }
       `}</style>
     </div>
