@@ -4,9 +4,7 @@
  * The main navigation header for the storefront. It includes the logo,
  * navigation links, search, account access, and shopping cart.
  * 
- * The header is designed to be responsive:
- * - On desktop: Full horizontal navigation
- * - On mobile: Hamburger menu with slide-out navigation
+ * FIXED: Cart badge now properly computes item count from items array
  */
 
 import { useState } from 'react';
@@ -22,8 +20,10 @@ function Header() {
   // Get auth state from store
   const { user, isAuthenticated } = useAuthStore();
   
-  // Get cart item count from store
-  const cartItemCount = useCartStore((state) => state.itemCount);
+  // FIXED: Get items from store and compute count
+  // The store has getItemCount() as a function, not itemCount as a property
+  const items = useCartStore((state) => state.items);
+  const cartItemCount = (items || []).reduce((total, item) => total + (item.quantity || 1), 0);
 
   // Navigation links
   const navigation = [
@@ -108,7 +108,7 @@ function Header() {
               <span className="sr-only">Account</span>
             </Link>
 
-            {/* Cart */}
+            {/* Cart with badge */}
             <Link
               to="/cart"
               className="relative p-2 text-street-600 hover:text-street-900 transition-colors"
@@ -116,10 +116,10 @@ function Header() {
               <ShoppingBag className="w-5 h-5" />
               {cartItemCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-sunset-600 text-white text-xs font-bold rounded-full">
-                  {cartItemCount}
+                  {cartItemCount > 99 ? '99+' : cartItemCount}
                 </span>
               )}
-              <span className="sr-only">Cart</span>
+              <span className="sr-only">Cart ({cartItemCount} items)</span>
             </Link>
           </div>
         </div>
