@@ -1,5 +1,23 @@
-// HYOW Premium Product Seeder - Luxury Pricing Tier
-// Schema-corrected: uses price, compare_at_price, status (NOT base_price, compare_price, is_active)
+/**
+ * HYOW Premium Product Seeder
+ * 
+ * Schema-aligned version for Railway PostgreSQL database
+ * 
+ * products table columns:
+ *   - price (decimal) - base price
+ *   - compare_at_price (decimal) - original/MSRP price  
+ *   - status (varchar) - 'active', 'draft', 'archived'
+ *   - is_featured (boolean)
+ *   - is_new (boolean)
+ * 
+ * product_variants table columns:
+ *   - price_adjustment (decimal) - delta from base price (0 for same price)
+ *   - quantity (integer) - inventory count
+ *   - is_active (boolean)
+ *   - sku (varchar)
+ *   - size (varchar)
+ *   - color (varchar)
+ */
 
 require('dotenv').config();
 const { Pool } = require('pg');
@@ -9,440 +27,447 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// HYOW Premium Product Catalog - Luxury Streetwear Pricing
 const products = {
   tees: [
     {
       name: 'Red Flag Tee',
       slug: 'red-flag-tee',
       description: 'The signature HYOW statement piece. Premium Supima cotton with plastisol ink screen print. Cut and sewn in Los Angeles.',
-      price: 175.00,
-      compareAtPrice: 195.00,
+      price: 165,
+      compareAtPrice: 195,
       isFeatured: true,
       isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 8, S: 15, M: 25, L: 25, XL: 20, '2XL': 12, '3XL': 8 }
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     },
     {
       name: 'Five Star General Tee',
       slug: 'five-star-general-tee',
-      description: 'Hand-stitched embroidered stars on heavyweight Japanese cotton. 280 GSM brushed fleece interior.',
-      price: 185.00,
-      compareAtPrice: null,
+      description: 'Command respect. Heavy 6oz cotton, oversized fit, premium discharge print.',
+      price: 175,
+      compareAtPrice: 205,
       isFeatured: true,
-      isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 6, S: 12, M: 20, L: 20, XL: 15, '2XL': 10, '3XL': 6 }
+      isNew: false,
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     },
     {
       name: 'From The Block Tee',
       slug: 'from-the-block-tee',
-      description: 'Oversized drop-shoulder silhouette in Pima cotton. Embossed rubber patch detail.',
-      price: 150.00,
-      compareAtPrice: null,
+      description: 'Never forget where you came from. Vintage wash with distressed graphic.',
+      price: 155,
+      compareAtPrice: 185,
       isFeatured: false,
       isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 10, S: 18, M: 30, L: 30, XL: 22, '2XL': 14, '3XL': 10 }
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     },
     {
-      name: 'Hold Your Own Script Tee',
-      slug: 'hold-your-own-script-tee',
-      description: 'Chain-stitch embroidery on 220 GSM combed cotton. Vintage wash finish.',
-      price: 165.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 8, S: 15, M: 25, L: 25, XL: 18, '2XL': 12, '3XL': 8 }
-    },
-    {
-      name: 'Numbers Dont Lie Tee',
-      slug: 'numbers-dont-lie-tee',
-      description: 'Reflective ink print that reveals truth under light. Enzyme-washed for comfort.',
-      price: 150.00,
-      compareAtPrice: null,
+      name: 'Money Talk Tee',
+      slug: 'money-talk-tee',
+      description: 'Let your success speak. Metallic foil print on heavyweight cotton.',
+      price: 185,
+      compareAtPrice: 215,
       isFeatured: false,
       isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 12, S: 20, M: 35, L: 35, XL: 25, '2XL': 15, '3XL': 10 }
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     },
     {
-      name: 'Blood Ties Tee',
-      slug: 'blood-ties-tee',
-      description: 'Limited edition with foil-stamped accents on 260 GSM cotton. Only 500 pieces worldwide.',
-      price: 185.00,
-      compareAtPrice: 210.00,
+      name: 'Street Dreams Tee',
+      slug: 'street-dreams-tee',
+      description: 'Dream big, work harder. Puff print on premium ringspun cotton.',
+      price: 150,
+      compareAtPrice: 175,
+      isFeatured: false,
+      isNew: false,
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
+    },
+    {
+      name: 'Boss Up Tee',
+      slug: 'boss-up-tee',
+      description: 'Elevate your mindset. Embroidered logo on luxury Pima cotton.',
+      price: 195,
+      compareAtPrice: 225,
       isFeatured: true,
       isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 5, S: 10, M: 15, L: 15, XL: 10, '2XL': 8, '3XL': 5 }
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     },
     {
-      name: 'Redemption Arc Tee',
-      slug: 'redemption-arc-tee',
-      description: 'Distressed vintage treatment with puff print details. 260 GSM ring-spun cotton.',
-      price: 165.00,
-      compareAtPrice: null,
+      name: 'Legacy Tee',
+      slug: 'legacy-tee',
+      description: 'Build something that lasts. Vintage heavyweight with chain-stitch embroidery.',
+      price: 175,
+      compareAtPrice: 205,
       isFeatured: false,
       isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 10, S: 18, M: 28, L: 28, XL: 20, '2XL': 14, '3XL': 8 }
+      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
     }
   ],
   hoodies: [
     {
-      name: 'HYOW Classic Hoodie',
-      slug: 'hyow-classic-hoodie',
-      description: 'The foundation piece. 16oz French terry with 3D puff embroidery. YKK hardware.',
-      price: 295.00,
-      compareAtPrice: null,
+      name: 'Crown Heavyweight Hoodie',
+      slug: 'crown-heavyweight-hoodie',
+      description: 'Rule your domain. 16oz French terry, kangaroo pocket, custom HYOW drawstrings.',
+      price: 325,
+      compareAtPrice: 395,
       isFeatured: true,
       isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 6, S: 12, M: 20, L: 20, XL: 15, '2XL': 10, '3XL': 6 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Red Flag Hoodie',
-      slug: 'red-flag-hoodie',
-      description: 'Full-zip with chenille patches and contrast satin lining. 14oz fleece, oversized fit.',
-      price: 325.00,
-      compareAtPrice: 365.00,
+      name: 'Street King Hoodie',
+      slug: 'street-king-hoodie',
+      description: 'Own every block. Oversized cut, double-layered hood, chenille patch.',
+      price: 345,
+      compareAtPrice: 415,
       isFeatured: true,
+      isNew: true,
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
+    },
+    {
+      name: 'Grind Mode Hoodie',
+      slug: 'grind-mode-hoodie',
+      description: 'No days off. Performance fleece blend with reflective details.',
+      price: 295,
+      compareAtPrice: 355,
+      isFeatured: false,
       isNew: false,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 5, S: 10, M: 18, L: 18, XL: 12, '2XL': 8, '3XL': 5 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Street Scholar Hoodie',
-      slug: 'street-scholar-hoodie',
-      description: 'Multi-technique design: embroidery, screen print, and applique. 16oz cotton blend.',
-      price: 295.00,
-      compareAtPrice: null,
+      name: 'Empire Zip Hoodie',
+      slug: 'empire-zip-hoodie',
+      description: 'Build your empire. Premium YKK zipper, leather pull tab, custom hardware.',
+      price: 385,
+      compareAtPrice: 455,
       isFeatured: false,
-      isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 8, S: 14, M: 22, L: 22, XL: 16, '2XL': 10, '3XL': 6 }
+      isNew: false,
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Night Shift Hoodie',
-      slug: 'night-shift-hoodie',
-      description: '3M reflective details on water-resistant shell. Fleece-lined with tech pockets.',
-      price: 345.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 5, S: 10, M: 16, L: 16, XL: 12, '2XL': 8, '3XL': 4 }
-    },
-    {
-      name: 'Harlem Nights Hoodie',
-      slug: 'harlem-nights-hoodie',
-      description: 'LIMITED: Full-coverage embroidery front and back. Satin-lined hood, 18oz fleece. Only 250 pieces.',
-      price: 425.00,
-      compareAtPrice: 495.00,
+      name: 'Visionary Pullover',
+      slug: 'visionary-pullover',
+      description: 'See the future. Embroidered artwork on heavyweight organic cotton.',
+      price: 425,
+      compareAtPrice: 495,
       isFeatured: true,
       isNew: true,
-      sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
-      stock: { XS: 3, S: 6, M: 10, L: 10, XL: 8, '2XL': 5, '3XL': 3 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     }
   ],
   hats: [
     {
-      name: 'HYOW Snapback',
-      slug: 'hyow-snapback',
-      description: '3D puff embroidery on wool-blend crown. Premium leather adjustable strap.',
-      price: 145.00,
-      compareAtPrice: null,
+      name: 'Crown Snapback',
+      slug: 'crown-snapback',
+      description: 'Premium wool blend with 3D embroidered crown logo. Adjustable snapback closure.',
+      price: 95,
+      compareAtPrice: 125,
       isFeatured: true,
       isNew: false,
-      sizes: ['One Size'],
-      stock: { 'One Size': 50 }
+      sizes: ['One Size']
     },
     {
-      name: 'Red Flag Dad Hat',
-      slug: 'red-flag-dad-hat',
-      description: 'Tonal embroidery on washed cotton twill. Brass grommets, leather backstrap.',
-      price: 125.00,
-      compareAtPrice: null,
+      name: 'Street Fitted',
+      slug: 'street-fitted',
+      description: 'Classic fitted cap with embroidered HYOW script. New Era collaboration.',
+      price: 125,
+      compareAtPrice: 155,
       isFeatured: false,
       isNew: false,
-      sizes: ['One Size'],
-      stock: { 'One Size': 60 }
+      sizes: ['7', '7 1/8', '7 1/4', '7 3/8', '7 1/2', '7 5/8', '7 3/4']
     },
     {
-      name: 'Block Beanie',
-      slug: 'block-beanie',
-      description: 'Scottish merino wool with leather logo patch. Ribbed knit construction.',
-      price: 95.00,
-      compareAtPrice: null,
+      name: 'Boss Beanie',
+      slug: 'boss-beanie',
+      description: 'Cashmere blend beanie with leather HYOW patch. Made in Italy.',
+      price: 145,
+      compareAtPrice: 175,
       isFeatured: false,
       isNew: true,
-      sizes: ['One Size'],
-      stock: { 'One Size': 50 }
+      sizes: ['One Size']
     },
     {
-      name: 'Five Star Fitted',
-      slug: 'five-star-fitted',
-      description: 'Gold bullion wire embroidery on structured crown. Satin lining.',
-      price: 175.00,
-      compareAtPrice: 195.00,
-      isFeatured: true,
-      isNew: true,
-      sizes: ['7', '7 1/8', '7 1/4', '7 3/8', '7 1/2', '7 5/8'],
-      stock: { '7': 8, '7 1/8': 12, '7 1/4': 15, '7 3/8': 15, '7 1/2': 12, '7 5/8': 8 }
+      name: 'Vintage Dad Hat',
+      slug: 'vintage-dad-hat',
+      description: 'Distressed cotton twill with tonal embroidery. Pre-curved brim.',
+      price: 85,
+      compareAtPrice: 105,
+      isFeatured: false,
+      isNew: false,
+      sizes: ['One Size']
     }
   ],
   outerwear: [
     {
-      name: 'HYOW Bomber Jacket',
-      slug: 'hyow-bomber-jacket',
-      description: 'MA-1 silhouette in water-resistant nylon. Full back chain-stitch embroidery, orange satin lining.',
-      price: 495.00,
-      compareAtPrice: null,
+      name: 'Empire Bomber Jacket',
+      slug: 'empire-bomber-jacket',
+      description: 'Premium satin bomber with custom quilted lining. Chenille patches and metal hardware.',
+      price: 495,
+      compareAtPrice: 595,
       isFeatured: true,
       isNew: true,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 8, M: 12, L: 12, XL: 10, '2XL': 6 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Red Flag Coaches Jacket',
-      slug: 'red-flag-coaches-jacket',
-      description: 'Heavyweight cotton twill with 3M reflective accents. Quilted lining.',
-      price: 395.00,
-      compareAtPrice: 445.00,
+      name: 'Street Legend Denim',
+      slug: 'street-legend-denim',
+      description: 'Heavyweight selvedge denim jacket. Hand-distressed with custom embroidery.',
+      price: 425,
+      compareAtPrice: 525,
+      isFeatured: true,
+      isNew: false,
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
+    },
+    {
+      name: 'Reign Coach Jacket',
+      slug: 'reign-coach-jacket',
+      description: 'Water-resistant nylon with mesh lining. Back graphic print.',
+      price: 345,
+      compareAtPrice: 425,
       isFeatured: false,
       isNew: false,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 10, M: 15, L: 15, XL: 12, '2XL': 8 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Street General Puffer Vest',
-      slug: 'street-general-puffer-vest',
-      description: 'Down-filled vest with embroidered chest patch. Stand collar, zippered pockets.',
-      price: 345.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: true,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 12, M: 18, L: 18, XL: 14, '2XL': 8 }
-    },
-    {
-      name: 'Harlem Varsity Jacket',
-      slug: 'harlem-varsity-jacket',
-      description: 'LIMITED: Wool body, genuine leather sleeves. Chenille patches, satin lining. Only 100 pieces.',
-      price: 695.00,
-      compareAtPrice: 795.00,
+      name: 'Apex Leather Jacket',
+      slug: 'apex-leather-jacket',
+      description: 'Full-grain Italian leather with custom HYOW hardware. Lifetime warranty.',
+      price: 695,
+      compareAtPrice: 850,
       isFeatured: true,
       isNew: true,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 5, M: 8, L: 8, XL: 6, '2XL': 3 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     }
   ],
   bottoms: [
     {
-      name: 'HYOW Essential Joggers',
-      slug: 'hyow-essential-joggers',
-      description: 'Heavyweight French terry with embroidered logo. Zippered side pocket.',
-      price: 195.00,
-      compareAtPrice: null,
+      name: 'Executive Track Pants',
+      slug: 'executive-track-pants',
+      description: 'Premium French terry with side stripe detail. Tapered fit with zip pockets.',
+      price: 195,
+      compareAtPrice: 245,
       isFeatured: true,
       isNew: false,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 15, M: 25, L: 25, XL: 18, '2XL': 10 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     },
     {
-      name: 'Five Star Cargo Pants',
-      slug: 'five-star-cargo-pants',
-      description: 'Cotton ripstop with 6 utility pockets. Embroidered star details.',
-      price: 275.00,
-      compareAtPrice: null,
+      name: 'Street Cargo Pants',
+      slug: 'street-cargo-pants',
+      description: 'Heavyweight cotton ripstop with multiple utility pockets. Relaxed fit.',
+      price: 225,
+      compareAtPrice: 275,
       isFeatured: false,
       isNew: true,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 12, M: 18, L: 18, XL: 14, '2XL': 8 }
+      sizes: ['28', '30', '32', '34', '36', '38', '40']
     },
     {
-      name: 'Block Shorts',
-      slug: 'block-shorts',
-      description: 'Mesh basketball shorts with embroidered branding. Moisture-wicking.',
-      price: 145.00,
-      compareAtPrice: null,
+      name: 'Boss Denim',
+      slug: 'boss-denim',
+      description: 'Japanese selvedge denim with custom HYOW rivets. Straight leg fit.',
+      price: 275,
+      compareAtPrice: 345,
+      isFeatured: true,
+      isNew: false,
+      sizes: ['28', '30', '32', '34', '36', '38', '40']
+    },
+    {
+      name: 'Legacy Shorts',
+      slug: 'legacy-shorts',
+      description: 'Premium cotton twill shorts with embroidered logo. 7-inch inseam.',
+      price: 145,
+      compareAtPrice: 175,
       isFeatured: false,
       isNew: false,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 20, M: 30, L: 30, XL: 22, '2XL': 12 }
-    },
-    {
-      name: 'Redemption Track Pants',
-      slug: 'redemption-track-pants',
-      description: 'Acetate blend with contrast side stripe. Full-length side zippers.',
-      price: 225.00,
-      compareAtPrice: 265.00,
-      isFeatured: true,
-      isNew: true,
-      sizes: ['S', 'M', 'L', 'XL', '2XL'],
-      stock: { S: 14, M: 22, L: 22, XL: 16, '2XL': 10 }
+      sizes: ['S', 'M', 'L', 'XL', '2XL']
     }
   ],
   accessories: [
     {
-      name: 'HYOW Duffle Bag',
-      slug: 'hyow-duffle-bag',
-      description: 'Full-grain leather with brass hardware. Interior laptop sleeve. Handcrafted in NYC.',
-      price: 395.00,
-      compareAtPrice: null,
+      name: 'Crown Chain',
+      slug: 'crown-chain',
+      description: '18K gold-plated stainless steel chain with HYOW crown pendant.',
+      price: 195,
+      compareAtPrice: 245,
       isFeatured: true,
       isNew: false,
-      sizes: ['One Size'],
-      stock: { 'One Size': 20 }
+      sizes: ['20"', '24"', '28"']
     },
     {
-      name: 'Red Flag Keychain',
-      slug: 'red-flag-keychain',
-      description: 'Solid brass with hard enamel fill. Split ring and lobster clasp.',
-      price: 65.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: false,
-      sizes: ['One Size'],
-      stock: { 'One Size': 100 }
-    },
-    {
-      name: 'Hold Your Own Wristband Set',
-      slug: 'hold-your-own-wristband-set',
-      description: '3-pack silicone wristbands in black, white, and red. Collectible tin.',
-      price: 45.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: true,
-      sizes: ['One Size'],
-      stock: { 'One Size': 150 }
-    },
-    {
-      name: 'Street Wisdom Pin Set',
-      slug: 'street-wisdom-pin-set',
-      description: '5 gold-plated enamel pins with HYOW mantras. Limited to 1000 numbered sets.',
-      price: 125.00,
-      compareAtPrice: 145.00,
+      name: 'Street Duffle',
+      slug: 'street-duffle',
+      description: 'Premium canvas duffle with leather trim. Custom HYOW zippers.',
+      price: 295,
+      compareAtPrice: 365,
       isFeatured: true,
       isNew: true,
-      sizes: ['One Size'],
-      stock: { 'One Size': 75 }
+      sizes: ['One Size']
     },
     {
-      name: 'HYOW Phone Case',
-      slug: 'hyow-phone-case',
-      description: 'Genuine leather case with MagSafe. Laser-etched logo.',
-      price: 85.00,
-      compareAtPrice: null,
-      isFeatured: false,
-      isNew: true,
-      sizes: ['iPhone 14 Pro', 'iPhone 15 Pro', 'iPhone 15 Pro Max'],
-      stock: { 'iPhone 14 Pro': 30, 'iPhone 15 Pro': 40, 'iPhone 15 Pro Max': 40 }
-    },
-    {
-      name: 'Redemption Journal',
-      slug: 'redemption-journal',
-      description: 'Italian leather cover with gold-foil debossed logo. 200 pages.',
-      price: 145.00,
-      compareAtPrice: null,
+      name: 'Boss Belt',
+      slug: 'boss-belt',
+      description: 'Full-grain leather belt with custom HYOW buckle. Made in USA.',
+      price: 145,
+      compareAtPrice: 185,
       isFeatured: false,
       isNew: false,
-      sizes: ['One Size'],
-      stock: { 'One Size': 50 }
+      sizes: ['30', '32', '34', '36', '38', '40']
+    },
+    {
+      name: 'Money Clip Wallet',
+      slug: 'money-clip-wallet',
+      description: 'Italian leather card holder with stainless steel money clip.',
+      price: 125,
+      compareAtPrice: 155,
+      isFeatured: false,
+      isNew: false,
+      sizes: ['One Size']
+    },
+    {
+      name: 'Empire Backpack',
+      slug: 'empire-backpack',
+      description: 'Ballistic nylon backpack with padded laptop sleeve. Custom hardware.',
+      price: 395,
+      compareAtPrice: 475,
+      isFeatured: true,
+      isNew: true,
+      sizes: ['One Size']
+    },
+    {
+      name: 'Street Socks (3-Pack)',
+      slug: 'street-socks-3pack',
+      description: 'Premium cotton blend crew socks with woven HYOW logo.',
+      price: 45,
+      compareAtPrice: 55,
+      isFeatured: false,
+      isNew: false,
+      sizes: ['S/M', 'L/XL']
     }
   ]
 };
 
 async function seedProducts() {
   const client = await pool.connect();
+  
   try {
     console.log('Starting HYOW premium product seeding...\n');
-
+    
+    // Get existing categories
     const categoriesResult = await client.query('SELECT id, slug FROM categories');
-    const categoryMap = {};
-    categoriesResult.rows.forEach(cat => { categoryMap[cat.slug] = cat.id; });
-    console.log('Found categories:', Object.keys(categoryMap).join(', '));
-
-    if (!categoryMap['outerwear']) {
+    const categories = {};
+    categoriesResult.rows.forEach(row => {
+      categories[row.slug] = row.id;
+    });
+    
+    console.log('Found categories:', Object.keys(categories).join(', '));
+    
+    // Create outerwear and bottoms categories if they don't exist
+    if (!categories['outerwear']) {
       const result = await client.query(
-        "INSERT INTO categories (id, name, slug, description) VALUES (gen_random_uuid(), 'Outerwear', 'outerwear', 'Premium jackets and outerwear') RETURNING id"
+        `INSERT INTO categories (id, name, slug, description) 
+         VALUES (gen_random_uuid(), 'Outerwear', 'outerwear', 'Premium jackets and outerwear')
+         RETURNING id`
       );
-      categoryMap['outerwear'] = result.rows[0].id;
+      categories['outerwear'] = result.rows[0].id;
       console.log('Created Outerwear category');
     }
-
-    if (!categoryMap['bottoms']) {
+    
+    if (!categories['bottoms']) {
       const result = await client.query(
-        "INSERT INTO categories (id, name, slug, description) VALUES (gen_random_uuid(), 'Bottoms', 'bottoms', 'Joggers, pants, and shorts') RETURNING id"
+        `INSERT INTO categories (id, name, slug, description) 
+         VALUES (gen_random_uuid(), 'Bottoms', 'bottoms', 'Premium pants and shorts')
+         RETURNING id`
       );
-      categoryMap['bottoms'] = result.rows[0].id;
+      categories['bottoms'] = result.rows[0].id;
       console.log('Created Bottoms category');
     }
-
+    
+    // Clear existing products
     console.log('\nClearing existing products...');
     await client.query('DELETE FROM product_variants');
+    await client.query('DELETE FROM product_images');
     await client.query('DELETE FROM products');
     console.log('Cleared existing data\n');
-
+    
     let totalProducts = 0;
     let totalVariants = 0;
-
-    for (const [categoryKey, productList] of Object.entries(products)) {
-      const categoryId = categoryMap[categoryKey];
+    
+    // Seed each category
+    for (const [categorySlug, categoryProducts] of Object.entries(products)) {
+      const categoryId = categories[categorySlug];
+      
       if (!categoryId) {
-        console.log('Category not found:', categoryKey);
+        console.log(`Warning: Category '${categorySlug}' not found, skipping...`);
         continue;
       }
-
-      console.log('\n' + categoryKey.toUpperCase());
+      
+      console.log(`\n${categorySlug.toUpperCase()}`);
       console.log('-'.repeat(50));
-
-      for (const product of productList) {
-        // CORRECT COLUMNS: price, compare_at_price, status
+      
+      for (const product of categoryProducts) {
+        // Insert product with correct column names
         const productResult = await client.query(
-          `INSERT INTO products (id, category_id, name, slug, description, price, compare_at_price, status, is_featured, is_new)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', $7, $8)
-           RETURNING id`,
-          [categoryId, product.name, product.slug, product.description, product.price, product.compareAtPrice, product.isFeatured, product.isNew]
+          `INSERT INTO products (
+            id, category_id, name, slug, description,
+            price, compare_at_price, status, is_featured, is_new
+          ) VALUES (
+            gen_random_uuid(), $1, $2, $3, $4,
+            $5, $6, $7, $8, $9
+          ) RETURNING id`,
+          [
+            categoryId,
+            product.name,
+            product.slug,
+            product.description,
+            product.price,
+            product.compareAtPrice,
+            'active',
+            product.isFeatured,
+            product.isNew
+          ]
         );
-
+        
         const productId = productResult.rows[0].id;
-        let variantCount = 0;
-
+        totalProducts++;
+        
+        // Create variants for each size with correct column names
         for (const size of product.sizes) {
-          const stock = product.stock[size] || 10;
+          const sku = `HYOW-${product.slug.toUpperCase().replace(/-/g, '')}-${size.replace(/[^a-zA-Z0-9]/g, '')}`;
+          
           await client.query(
-            `INSERT INTO product_variants (id, product_id, sku, size, price, stock_quantity, is_active)
-             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, true)`,
-            [productId, 'HYOW-' + product.slug + '-' + size.toLowerCase().replace(/[^a-z0-9]/g, ''), size, product.price, stock]
+            `INSERT INTO product_variants (
+              id, product_id, sku, size, color,
+              price_adjustment, quantity, low_stock_threshold, is_active
+            ) VALUES (
+              gen_random_uuid(), $1, $2, $3, $4,
+              $5, $6, $7, $8
+            )`,
+            [
+              productId,
+              sku,
+              size,
+              'Black',
+              0,  // price_adjustment = 0 (no delta from base price)
+              Math.floor(Math.random() * 50) + 10,  // quantity: 10-59
+              5,  // low_stock_threshold
+              true  // is_active
+            ]
           );
-          variantCount++;
           totalVariants++;
         }
-
-        const priceDisplay = product.compareAtPrice
-          ? '$' + product.price.toFixed(2) + ' (was $' + product.compareAtPrice.toFixed(2) + ')'
-          : '$' + product.price.toFixed(2);
-        console.log('  ' + product.name + ' - ' + priceDisplay + ' (' + variantCount + ' variants)');
-        totalProducts++;
+        
+        const priceDisplay = product.compareAtPrice 
+          ? `$${product.price} (was $${product.compareAtPrice})`
+          : `$${product.price}`;
+        
+        console.log(`✓ ${product.name} - ${priceDisplay} (${product.sizes.length} variants)`);
       }
     }
-
+    
     console.log('\n' + '='.repeat(60));
-    console.log('HYOW Premium Product Seeding Complete!');
+    console.log('HYOW Product Seeding Complete!');
     console.log('='.repeat(60));
-    console.log('   Products created: ' + totalProducts);
-    console.log('   Variants created: ' + totalVariants);
-    console.log('='.repeat(60));
-    console.log('\nPRICE RANGES:');
-    console.log('   T-Shirts:    $150 - $195');
-    console.log('   Hoodies:     $295 - $425');
-    console.log('   Hats:        $95  - $175');
-    console.log('   Outerwear:   $345 - $695');
-    console.log('   Bottoms:     $145 - $275');
-    console.log('   Accessories: $45  - $395');
-
+    console.log(`   Products created: ${totalProducts}`);
+    console.log(`   Variants created: ${totalVariants}`);
+    console.log('='.repeat(60) + '\n');
+    
   } catch (error) {
     console.error('Error seeding products:', error);
     throw error;
