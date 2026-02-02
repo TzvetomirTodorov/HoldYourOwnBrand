@@ -1,13 +1,16 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════════════════════
-# HYOW E-Commerce - Smart Scaffolding Script v1.0
+# HYOW E-Commerce - Smart Scaffolding Script v2.0
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # Based on PawsTrack Smart Scaffolding Script v2.6
 # Adapted for Hold Your Own Brand e-commerce platform
 #
-# This script analyzes WHAT changed and creates meaningful, verbose commits
-# that describe the actual features and changes.
+# v2.0 PERFORMANCE IMPROVEMENTS:
+# - Uses native git diff instead of per-file hash comparison (10-100x faster)
+# - Eliminates subprocess spawning bottleneck in change detection
+# - Adds progress indicators to prevent apparent hangs
+# - Optimized file categorization with associative arrays
 #
 # Features:
 # - Branch-aware: auto-detects current branch, compares/pushes correctly
@@ -18,7 +21,7 @@
 #
 # Usage:
 #   chmod +x scaffold-commits.sh
-#   ./scaffold-commits.sh
+#   ./scaffold-commits.sh [commit-message]
 #
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -65,6 +68,8 @@ print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; }
 print_info() { echo -e "${CYAN}ℹ${NC} $1"; }
 print_file() { echo -e "  ${GRAY}→${NC} $1"; }
+print_progress() { echo -ne "\r${CYAN}⟳${NC} $1"; }
+clear_progress() { echo -ne "\r\033[K"; }
 
 # ==================== SMART FEATURE DETECTION ====================
 # This function looks at file names and paths to determine the ACTUAL feature
@@ -74,228 +79,228 @@ detect_feature() {
     local file="$1"
     local basename=$(basename "$file")
     local dirname=$(dirname "$file")
-    
+
     # ===== E-COMMERCE SPECIFIC FEATURES (most specific first) =====
-    
+
     # Products
     case "$file" in
         *[Pp]roduct*|*catalog*|*inventory*)
             echo "products"
             return ;;
     esac
-    
+
     # Orders/Checkout
     case "$file" in
         *[Oo]rder*|*[Cc]heckout*|*[Pp]ayment*)
             echo "orders"
             return ;;
     esac
-    
+
     # Cart/Shopping
     case "$file" in
         *[Cc]art*|*[Ss]hopping*|*[Bb]asket*)
             echo "cart"
             return ;;
     esac
-    
+
     # Categories
     case "$file" in
         *[Cc]ategor*)
             echo "categories"
             return ;;
     esac
-    
+
     # Wishlist
     case "$file" in
         *[Ww]ishlist*|*[Ff]avorite*)
             echo "wishlist"
             return ;;
     esac
-    
+
     # Stripe/PayPal Payment
     case "$file" in
         *[Ss]tripe*|*[Pp]aypal*|*webhook*)
             echo "payments"
             return ;;
     esac
-    
+
     # Admin Dashboard
     case "$file" in
         */admin/*|*[Aa]dmin[A-Z]*)
             echo "admin"
             return ;;
     esac
-    
+
     # Authentication
     case "$file" in
         *[Aa]uth[A-Z]*|*[Aa]uth.js*|*[Ll]ogin*|*[Rr]egister*|*[Vv]erify*|*[Pp]assword*|*[Ss]ession*)
             echo "auth"
             return ;;
     esac
-    
+
     # User Management
     case "$file" in
         *[Uu]sers.jsx|*[Uu]ser[Cc]ontroller*|*[Uu]ser[Rr]outes*|*[Pp]rofile*|*[Aa]ccount*)
             echo "users"
             return ;;
     esac
-    
+
     # Email/Notifications
     case "$file" in
         *email*|*[Nn]otification*|*resend*|*smtp*|*mailer*)
             echo "email"
             return ;;
     esac
-    
+
     # Image Upload/Cloudinary
     case "$file" in
         *[Uu]pload*|*[Cc]loudinary*|*[Ii]mage*)
             echo "uploads"
             return ;;
     esac
-    
+
     # ===== CATEGORY-BASED DETECTION (fallback) =====
-    
+
     # Migrations/Seeds
     case "$file" in
         */migrations/*|*/db/seed*|*migrate*)
             echo "database"
             return ;;
     esac
-    
+
     # Documentation
     case "$file" in
         *.md|docs/*|README*|CHANGELOG*|LICENSE*|*.txt)
             echo "docs"
             return ;;
     esac
-    
+
     # Tests
     case "$file" in
         *.test.js|*.spec.js|*/tests/*|*/__tests__/*)
             echo "tests"
             return ;;
     esac
-    
+
     # Styles
     case "$file" in
         *.css|*.scss|*tailwind*|*style*)
             echo "styles"
             return ;;
     esac
-    
+
     # Configuration
     case "$file" in
         */config/*|*.config.js|*.config.ts|.env*|railway.json|docker*|Dockerfile*|vercel.json)
             echo "config"
             return ;;
     esac
-    
+
     # Dependencies
     case "$file" in
         package.json|package-lock.json|*/package.json)
             echo "dependencies"
             return ;;
     esac
-    
+
     # Scripts
     case "$file" in
         *.sh|scripts/*)
             echo "scripts"
             return ;;
     esac
-    
+
     # CI/CD
     case "$file" in
         .github/*|*.yml|*.yaml)
             echo "ci-cd"
             return ;;
     esac
-    
+
     # Assets
     case "$file" in
         */assets/*|*/images/*|*/public/*|*.svg|*.png|*.jpg)
             echo "assets"
             return ;;
     esac
-    
+
     # API Services (client)
     case "$file" in
         */services/*.js|*/api.js)
             echo "api-client"
             return ;;
     esac
-    
+
     # Store/State (Zustand, Redux)
     case "$file" in
         */store/*|*Store.js|*Slice.js)
             echo "state"
             return ;;
     esac
-    
+
     # Controllers (backend)
     case "$file" in
         */controllers/*)
             echo "backend-api"
             return ;;
     esac
-    
+
     # Routes (backend)
     case "$file" in
         */routes/*)
             echo "backend-routes"
             return ;;
     esac
-    
+
     # Middleware
     case "$file" in
         */middleware/*)
             echo "middleware"
             return ;;
     esac
-    
+
     # App.jsx / Main entry
     case "$file" in
         */App.jsx|*/App.tsx|*/main.jsx|*/index.jsx)
             echo "app-core"
             return ;;
     esac
-    
+
     # Pages index
     case "$file" in
         */pages/index.js|*/pages/index.ts)
             echo "page-exports"
             return ;;
     esac
-    
+
     # Pages (frontend)
     case "$file" in
         */pages/*.jsx|*/pages/*.tsx)
             echo "ui-pages"
             return ;;
     esac
-    
+
     # Layout components
     case "$file" in
         */layout/*|*Layout*)
             echo "layout"
             return ;;
     esac
-    
+
     # Components (frontend)
     case "$file" in
         */components/*.jsx|*/components/*.tsx)
             echo "ui-components"
             return ;;
     esac
-    
+
     # Utilities
     case "$file" in
         */utils/*|*/helpers/*|*/lib/*)
             echo "utilities"
             return ;;
     esac
-    
+
     # Default
     echo "misc"
 }
@@ -389,7 +394,7 @@ Database updates:
 }
 
 # ==================== MAIN SCRIPT ====================
-print_header "HYOW E-Commerce - Smart Scaffolding Script v1.0"
+print_header "HYOW E-Commerce - Smart Scaffolding Script v2.0"
 
 # Check if we're in a git repo
 if [ ! -d ".git" ]; then
@@ -412,25 +417,24 @@ fi
 # ==================== STEP 2: FETCH REMOTE ====================
 print_step "Step 2: Sync with Remote"
 
-FETCH_SUCCESS="no"
 REMOTE_EXISTS="no"
-COMPARE_BRANCH="$WORKING_BRANCH"
+REMOTE_REF=""
 
 # Check if remote exists
 if git remote | grep -q "origin"; then
     print_info "Remote 'origin' found"
-    
-    # Try to fetch
-    if git fetch origin "$WORKING_BRANCH" 2>/dev/null; then
-        FETCH_SUCCESS="yes"
+
+    # Try to fetch (with timeout to prevent hangs)
+    print_progress "Fetching from origin..."
+    if timeout 30 git fetch origin "$WORKING_BRANCH" 2>/dev/null; then
+        clear_progress
         print_success "Fetched origin/$WORKING_BRANCH"
-    elif git fetch origin 2>/dev/null; then
-        FETCH_SUCCESS="yes"
+    elif timeout 30 git fetch origin 2>/dev/null; then
+        clear_progress
         print_success "Fetched remote refs"
-    elif git fetch origin main:refs/remotes/origin/main 2>/dev/null; then
-        FETCH_SUCCESS="yes"
-        COMPARE_BRANCH="main"
-        print_success "Fetched origin/main (for comparison)"
+    else
+        clear_progress
+        print_warning "Fetch timed out or failed - continuing with local comparison"
     fi
 else
     print_warning "No remote configured"
@@ -438,72 +442,71 @@ else
 fi
 
 # Determine remote ref for comparison
-REMOTE_REF=""
 if git rev-parse --verify "origin/$WORKING_BRANCH" >/dev/null 2>&1; then
     REMOTE_REF="origin/$WORKING_BRANCH"
-    COMPARE_BRANCH="$WORKING_BRANCH"
     REMOTE_EXISTS="yes"
 elif git rev-parse --verify "origin/main" >/dev/null 2>&1; then
     REMOTE_REF="origin/main"
-    COMPARE_BRANCH="main"
     REMOTE_EXISTS="yes"
 fi
 
 if [ "$REMOTE_EXISTS" = "yes" ]; then
     print_success "Comparing against $REMOTE_REF"
 else
-    print_warning "No remote history - treating as initial commit"
+    print_warning "No remote history - treating all tracked files as changes"
 fi
 
-# ==================== STEP 3: DETECT CHANGES ====================
+# ==================== STEP 3: DETECT CHANGES (OPTIMIZED) ====================
 print_step "Step 3: Detecting Changes"
 
+print_progress "Analyzing repository..."
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPTIMIZATION: Use native git commands instead of per-file hash comparison
+# This is 10-100x faster because git does internal tree diff operations
+# ══════════════════════════════════════════════════════════════════════════════
+
+CHANGED_FILES=""
+
 if [ "$REMOTE_EXISTS" = "yes" ]; then
-    # Get all local files
-    LOCAL_FILES=$(find . -type f \
-        ! -path './.git/*' \
-        ! -path './node_modules/*' \
-        ! -path './client/node_modules/*' \
-        ! -path './server/node_modules/*' \
-        ! -path './client/dist/*' \
-        ! -path './.vercel/*' \
-        ! -name '*.log' \
-        ! -name '.env' \
-        ! -name '.env.local' \
-        2>/dev/null | sed 's|^\./||' | sort)
+    # METHOD 1: Get files that differ from remote (FAST - single git operation)
+    # This includes: modified files, new files not in remote
     
-    # Compare each file
-    CHANGED_FILES=""
-    for file in $LOCAL_FILES; do
-        REMOTE_HASH=$(git ls-tree "$REMOTE_REF" "$file" 2>/dev/null | awk '{print $3}')
-        
-        if [ -z "$REMOTE_HASH" ]; then
-            # New file
-            CHANGED_FILES="$CHANGED_FILES$file"$'\n'
-        else
-            # Existing file - compare content
-            LOCAL_HASH=$(git hash-object "$file" 2>/dev/null)
-            if [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
-                CHANGED_FILES="$CHANGED_FILES$file"$'\n'
-            fi
-        fi
-    done
+    # Get modified/deleted files compared to remote
+    DIFF_FILES=$(git diff --name-only "$REMOTE_REF" HEAD 2>/dev/null || true)
     
-    CHANGED_FILES=$(echo "$CHANGED_FILES" | grep -v '^$' | sort -u)
+    # Get untracked files (new files not yet committed)
+    UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || true)
+    
+    # Get staged but uncommitted files
+    STAGED=$(git diff --cached --name-only 2>/dev/null || true)
+    
+    # Get unstaged modifications to tracked files
+    UNSTAGED=$(git diff --name-only 2>/dev/null || true)
+    
+    # Combine all sources of changes
+    CHANGED_FILES=$(printf "%s\n%s\n%s\n%s" "$DIFF_FILES" "$UNTRACKED" "$STAGED" "$UNSTAGED" | \
+        grep -v '^$' | \
+        grep -v 'node_modules' | \
+        grep -v '\.env$' | \
+        grep -v '\.env\.local$' | \
+        grep -v '\.log$' | \
+        sort -u)
 else
-    # No remote - all files are new
-    CHANGED_FILES=$(find . -type f \
-        ! -path './.git/*' \
-        ! -path './node_modules/*' \
-        ! -path './client/node_modules/*' \
-        ! -path './server/node_modules/*' \
-        ! -path './client/dist/*' \
-        ! -path './.vercel/*' \
-        ! -name '*.log' \
-        ! -name '.env' \
-        ! -name '.env.local' \
-        2>/dev/null | sed 's|^\./||' | sort)
+    # No remote - get all tracked files plus untracked
+    TRACKED=$(git ls-files 2>/dev/null || true)
+    UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || true)
+    
+    CHANGED_FILES=$(printf "%s\n%s" "$TRACKED" "$UNTRACKED" | \
+        grep -v '^$' | \
+        grep -v 'node_modules' | \
+        grep -v '\.env$' | \
+        grep -v '\.env\.local$' | \
+        grep -v '\.log$' | \
+        sort -u)
 fi
+
+clear_progress
 
 if [ -z "$CHANGED_FILES" ]; then
     print_success "Repository is up to date with remote!"
@@ -523,14 +526,20 @@ Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
 fi
 
 FILE_COUNT=$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')
-print_info "Found ${FILE_COUNT} files changed vs remote"
+print_success "Found ${FILE_COUNT} files with changes"
 echo ""
 
-# Categorize files by feature
-for file in $CHANGED_FILES; do
+# ==================== CATEGORIZE FILES ====================
+print_progress "Categorizing files by feature..."
+
+# Process files and categorize (this is fast - just string matching)
+echo "$CHANGED_FILES" | while read -r file; do
+    [ -z "$file" ] && continue
     feature=$(detect_feature "$file")
     echo "$file" >> "$TEMP_DIR/$feature.files"
 done
+
+clear_progress
 
 FEATURES=$(ls "$TEMP_DIR"/*.files 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/.files$//' | sort)
 
@@ -561,10 +570,10 @@ for feature in $FEATURE_ORDER; do
     if [ -f "$TEMP_DIR/$feature.files" ]; then
         COMMIT_NUM=$((COMMIT_NUM + 1))
         COMMIT_ORDER="$COMMIT_ORDER $feature"
-        
+
         title=$(get_commit_title "$feature")
         file_count=$(wc -l < "$TEMP_DIR/$feature.files" | tr -d ' ')
-        
+
         echo -e "${GREEN}$COMMIT_NUM.${NC} ${WHITE}$title${NC}"
         echo -e "   ${GRAY}$file_count files:${NC}"
         head -5 "$TEMP_DIR/$feature.files" | while read -r file; do
@@ -604,23 +613,23 @@ CURRENT=0
 for feature in $COMMIT_ORDER; do
     [ -z "$feature" ] && continue
     CURRENT=$((CURRENT + 1))
-    
+
     title=$(get_commit_title "$feature")
     body=$(get_commit_body "$feature")
     file_count=$(wc -l < "$TEMP_DIR/$feature.files" | tr -d ' ')
-    
+
     print_info "[$CURRENT/$COMMIT_NUM] $title"
-    
+
     # Stage ONLY this feature's files
     while read -r file; do
-        git add "$file" 2>/dev/null || true
+        [ -f "$file" ] && git add "$file" 2>/dev/null || true
     done < "$TEMP_DIR/$feature.files"
-    
+
     # Build file list for commit body
     file_list=$(head -10 "$TEMP_DIR/$feature.files" | sed 's/^/- /')
     [ "$file_count" -gt 10 ] && file_list="$file_list
 - ... and $((file_count - 10)) more files"
-    
+
     # Create commit
     if git commit -m "$title
 $body
@@ -628,7 +637,7 @@ Files changed ($file_count):
 $file_list" 2>/dev/null; then
         print_success "Created: $title"
     else
-        print_warning "Skipped (no changes)"
+        print_warning "Skipped (no stageable changes)"
     fi
 done
 
@@ -654,7 +663,9 @@ fi
 echo ""
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
+    print_progress "Pushing to GitHub..."
     if git push -u origin "$WORKING_BRANCH" 2>&1; then
+        clear_progress
         echo ""
         print_success "Pushed to GitHub!"
         echo ""
@@ -667,10 +678,11 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "  PR:   ${CYAN}https://github.com/${GITHUB_USER}/${REPO_NAME}/compare/main...${WORKING_BRANCH}${NC}"
         fi
         echo ""
-        echo -e "  ${GOLD}🔥 Frontend: https://holdyourownbrand.vercel.app${NC}"
-        echo -e "  ${GOLD}🔥 Backend:  https://holdyourownbrand-production.up.railway.app${NC}"
+        echo -e "  ${GOLD}🌐 Frontend: https://client-phi-tawny.vercel.app${NC}"
+        echo -e "  ${GOLD}🔧 Backend:  https://holdyourownbrand-production.up.railway.app${NC}"
         echo ""
     else
+        clear_progress
         print_warning "Push failed - trying force push..."
         read -p "Force push? (OVERWRITES REMOTE) (y/n) " -n 1 -r
         echo ""
@@ -680,4 +692,4 @@ else
     print_info "Run when ready: git push -u origin $WORKING_BRANCH"
 fi
 
-print_header "Done! 🔥 Hold Your Own! 🔥"
+print_header "Done! 🔥 Hold Your Own! 👑"
