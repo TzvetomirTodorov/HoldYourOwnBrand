@@ -20,9 +20,11 @@ function ProductDetailPage() {
     const fetchProduct = async () => {
       try {
         const response = await api.get(`/products/${slug}`);
-        setProduct(response.data.product);
-        if (response.data.product.variants?.length > 0) {
-          setSelectedVariant(response.data.product.variants[0]);
+        // API returns product directly, not nested under .product
+        const productData = response.data;
+        setProduct(productData);
+        if (productData.variants?.length > 0) {
+          setSelectedVariant(productData.variants[0]);
         }
       } catch (error) {
         console.error('Failed to fetch product:', error);
