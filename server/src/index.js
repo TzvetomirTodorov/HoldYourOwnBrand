@@ -33,18 +33,21 @@ app.set('trust proxy', 1);
 // set in Railway to the exact origin of the frontend (no trailing slash).
 //
 
+// This array is what matters - make sure it includes all your domains
 const allowedOrigins = [
-  process.env.CLIENT_URL,                           // Production frontend (Vercel)
-  'http://localhost:5173',                          // Vite dev server
-  'http://localhost:3000',                          // Alternative local dev
-  'https://client-phi-tawny.vercel.app',           // Explicit Vercel URL (backup)
-  'https://holdyourownbrand.vercel.app',           // Future Vercel URL
-].filter(Boolean); // Remove any undefined values
+  // Production domains (after custom domain setup)
+  'https://holdyourownbrand.com',
+  'https://www.holdyourownbrand.com',
+  
+  // Current Vercel deployment (keep until DNS propagates)
+  'https://client-phi-tawny.vercel.app',
+  
+  // Local development
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
 
-console.log('🔐 CORS Configuration:');
-console.log('   CLIENT_URL from env:', process.env.CLIENT_URL || 'NOT SET');
-console.log('   Allowed origins:', allowedOrigins);
-
+// Your existing corsOptions function uses this array, so it's already set up correctly
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, curl, Postman, etc.)
@@ -63,7 +66,7 @@ const corsOptions = {
     
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: true,                    // Allow cookies and auth headers
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
@@ -73,7 +76,7 @@ const corsOptions = {
     'Origin',
   ],
   exposedHeaders: ['Set-Cookie'],
-  maxAge: 86400,                        // Cache preflight for 24 hours
+  maxAge: 86400,
 };
 
 // Apply CORS middleware BEFORE other middleware
