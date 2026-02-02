@@ -1,10 +1,35 @@
 /**
- * Checkout Routes
+ * Checkout Routes - FULLY AUDITED against database schema
  * 
- * Handles the checkout process including:
- * - Creating Stripe PaymentIntents
- * - Creating orders in pending state
- * - Validating cart and inventory
+ * Database Schema Reference:
+ * 
+ * orders table:
+ *   - id (uuid, PK)
+ *   - user_id (uuid, nullable)
+ *   - session_id (varchar, nullable) 
+ *   - order_number (varchar, NOT NULL)
+ *   - status (varchar, NOT NULL)
+ *   - payment_status (varchar, NOT NULL)
+ *   - payment_method (varchar, nullable)
+ *   - stripe_payment_intent_id (varchar, nullable)
+ *   - subtotal (numeric, NOT NULL)
+ *   - discount_amount (numeric, NOT NULL)
+ *   - shipping_amount (numeric, NOT NULL)
+ *   - tax_amount (numeric, NOT NULL)
+ *   - total (numeric, NOT NULL)
+ *   - discount_code (varchar, nullable)
+ *   - shipping_address (jsonb, NOT NULL)
+ *   - billing_address (jsonb, NOT NULL)
+ *   - shipping_method (varchar, nullable)
+ *   - email (varchar, NOT NULL)
+ *   - phone (varchar, nullable)
+ *   - customer_notes (text, nullable)
+ *   - admin_notes (text, nullable)
+ *   - created_at, updated_at, shipped_at, delivered_at
+ * 
+ * order_items table:
+ *   - id, order_id, product_id, variant_id, product_name, variant_name,
+ *   - sku, unit_price, quantity, total_price, image_url, created_at
  */
 
 const express = require('express');
@@ -22,10 +47,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  * POST /api/checkout/create-payment-intent
  * 
  * Creates a Stripe PaymentIntent for the current cart.
- * This is called when the customer reaches the checkout page.
  */
 router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res) => {
-  const { shippingAddress, email } = req.body;
+  const { shippingAddress, billingAddress, email, phone } = req.body;
   const userId = req.user?.id;
   const sessionId = req.body.sessionId || req.query.sessionId;
 
@@ -33,8 +57,13 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     throw new AppError('User ID or session ID required', 400);
   }
 
+  // Validate required fields for order creation
+  if (!email) {
+    throw new AppError('Email is required', 400);
+  }
+
   // Get cart items - joining through product_variants to products
-  // Note: price comes from products table (p.price), NOT product_variants
+  // Price comes from products table (p.price)
   let cartResult;
   if (userId) {
     cartResult = await db.query(`
@@ -44,11 +73,13 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
         pv.id as variant_id,
         pv.size,
         pv.color,
+        pv.sku,
         pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
         p.price,
-        p.slug
+        p.slug,
+        p.image_url
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
       JOIN product_variants pv ON ci.variant_id = pv.id
@@ -63,11 +94,13 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
         pv.id as variant_id,
         pv.size,
         pv.color,
+        pv.sku,
         pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
         p.price,
-        p.slug
+        p.slug,
+        p.image_url
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
       JOIN product_variants pv ON ci.variant_id = pv.id
@@ -95,22 +128,29 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     const lineTotal = unitPrice * item.quantity;
     subtotal += lineTotal;
 
+    // Build variant name from size/color
+    const variantParts = [];
+    if (item.size) variantParts.push(item.size);
+    if (item.color) variantParts.push(item.color);
+    const variantName = variantParts.length > 0 ? variantParts.join(' / ') : null;
+
     items.push({
       variantId: item.variant_id,
       productId: item.product_id,
       productName: item.product_name,
-      size: item.size,
-      color: item.color,
+      variantName: variantName,
+      sku: item.sku || null,
+      imageUrl: item.image_url || null,
       quantity: item.quantity,
       unitPrice,
-      lineTotal
+      totalPrice: lineTotal
     });
   }
 
   // Calculate shipping (free over $200, otherwise $15)
   const shippingAmount = subtotal >= 200 ? 0 : 15;
   
-  // Calculate tax (approximate 8.875% for NY - adjust as needed)
+  // Calculate tax (approximate 8.875% for NY)
   const taxRate = 0.08875;
   const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
   
@@ -120,6 +160,10 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
 
   // Generate order number
   const orderNumber = `HYOW-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+  // Prepare addresses (use shipping as billing if not provided)
+  const finalShippingAddress = shippingAddress || {};
+  const finalBillingAddress = billingAddress || shippingAddress || {};
 
   // Create PaymentIntent
   const paymentIntent = await stripe.paymentIntents.create({
@@ -135,12 +179,14 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
   });
 
   // Create order in pending state
+  // IMPORTANT: All NOT NULL columns must have values
   const orderResult = await db.query(`
     INSERT INTO orders (
       order_number,
       user_id,
       session_id,
       email,
+      phone,
       status,
       payment_status,
       subtotal,
@@ -149,14 +195,16 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
       tax_amount,
       total,
       shipping_address,
+      billing_address,
       stripe_payment_intent_id
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING id
   `, [
     orderNumber,
     userId || null,
     sessionId || null,
-    email || null,
+    email,
+    phone || null,
     'pending',
     'pending',
     subtotal,
@@ -164,30 +212,40 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     shippingAmount,
     taxAmount,
     total,
-    shippingAddress ? JSON.stringify(shippingAddress) : null,
+    JSON.stringify(finalShippingAddress),
+    JSON.stringify(finalBillingAddress),
     paymentIntent.id
   ]);
 
   const orderId = orderResult.rows[0].id;
 
   // Create order items
+  // Using correct column names: total_price (not total), product_id, variant_name, sku, image_url
   for (const item of items) {
     await db.query(`
       INSERT INTO order_items (
         order_id,
+        product_id,
         variant_id,
         product_name,
-        quantity,
+        variant_name,
+        sku,
         unit_price,
-        total
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        quantity,
+        total_price,
+        image_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     `, [
       orderId,
+      item.productId,
       item.variantId,
       item.productName,
-      item.quantity,
+      item.variantName,
+      item.sku,
       item.unitPrice,
-      item.lineTotal
+      item.quantity,
+      item.totalPrice,
+      item.imageUrl
     ]);
   }
 
@@ -207,8 +265,7 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
 /**
  * POST /api/checkout/confirm
  * 
- * Called after successful payment to finalize the order
- * and clear the cart.
+ * Called after successful payment to finalize the order and clear the cart.
  */
 router.post('/confirm', optionalAuth, asyncHandler(async (req, res) => {
   const { orderNumber, paymentIntentId } = req.body;
@@ -231,7 +288,8 @@ router.post('/confirm', optionalAuth, asyncHandler(async (req, res) => {
   if (paymentIntent.status === 'succeeded') {
     // Update order status
     await db.query(`
-      UPDATE orders SET payment_status = 'paid', status = 'paid'
+      UPDATE orders 
+      SET payment_status = 'paid', status = 'paid', updated_at = NOW()
       WHERE order_number = $1
     `, [orderNumber]);
 
