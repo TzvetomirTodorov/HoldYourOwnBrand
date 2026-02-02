@@ -6,6 +6,8 @@
  * - react-phone-number-input for formatted phone
  * - Stripe Payment Element
  * - Order confirmation
+ * 
+ * FIXED: return_url now points to /order-confirmation for Stripe redirect
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -176,10 +178,12 @@ function PaymentForm({ orderNumber, onSuccess }) {
     setIsProcessing(true);
     setErrorMessage('');
 
+    // FIXED: return_url now goes to /order-confirmation
+    // Stripe will append ?payment_intent=xxx&payment_intent_client_secret=xxx&redirect_status=succeeded
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/checkout/success?order=${orderNumber}`,
+        return_url: `${window.location.origin}/order-confirmation`,
       },
       redirect: 'if_required',
     });
@@ -360,20 +364,11 @@ function CheckoutPage() {
     }
   };
 
-  // Handle successful payment
+  // Handle successful payment - redirect to order confirmation
   const handlePaymentSuccess = async (paymentIntentId) => {
-    try {
-      await api.post('/checkout/confirm', {
-        orderNumber,
-        paymentIntentId,
-        sessionId: getSessionId(),
-      });
-      await fetchCart();
-      setStep('success');
-    } catch (err) {
-      console.error('Order confirmation error:', err);
-      setStep('success');
-    }
+    // FIXED: Instead of showing inline success, redirect to order confirmation page
+    // This ensures consistent experience whether Stripe redirects or not
+    navigate(`/order-confirmation?payment_intent=${paymentIntentId}&redirect_status=succeeded`);
   };
 
   // Update shipping field
@@ -388,35 +383,6 @@ function CheckoutPage() {
         <div className="container-custom text-center py-16">
           <Loader2 className="w-12 h-12 mx-auto animate-spin text-ocean-600" />
           <p className="mt-4 text-street-500">Loading checkout...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Success state
-  if (step === 'success') {
-    return (
-      <div className="section">
-        <div className="container-custom max-w-2xl text-center py-16">
-          <CheckCircle className="w-20 h-20 mx-auto text-green-500 mb-6" />
-          <h1 className="font-display text-4xl tracking-wider mb-4">ORDER CONFIRMED!</h1>
-          <p className="text-xl text-street-600 mb-2">Thank you for your purchase</p>
-          <p className="text-street-500 mb-8">
-            Order Number: <span className="font-mono font-semibold">{orderNumber}</span>
-          </p>
-          <p className="text-street-500 mb-8">
-            We've sent a confirmation email to <strong>{shippingAddress.email}</strong>
-          </p>
-          <div className="flex gap-4 justify-center">
-            <Link to="/products" className="btn-secondary">
-              Continue Shopping
-            </Link>
-            {isAuthenticated && (
-              <Link to="/orders" className="btn-primary">
-                View Orders
-              </Link>
-            )}
-          </div>
         </div>
       </div>
     );
