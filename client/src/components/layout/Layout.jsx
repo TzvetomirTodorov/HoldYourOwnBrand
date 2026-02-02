@@ -1,29 +1,33 @@
 /**
- * Main Layout Component
+ * Layout Component
  * 
- * This component wraps all public pages and provides the consistent
- * header, footer, and navigation that customers see throughout the store.
+ * The main layout wrapper for all public storefront pages.
+ * Includes the header, footer, and now a global Toast notification system.
  * 
- * Using Outlet from react-router-dom allows child routes to render
- * their content in the designated area while keeping the layout consistent.
+ * The Outlet component from React Router renders the current page content
+ * between the header and footer.
  */
 
 import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Footer from './Footer';
+import Toast from '../ui/Toast';
 
 function Layout() {
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Main navigation header */}
+      {/* Global Toast Notifications - renders on top of everything */}
+      <Toast />
+      
+      {/* Site Header */}
       <Header />
       
-      {/* Page content - child routes render here */}
+      {/* Main Content Area - renders the matched route's component */}
       <main className="flex-grow">
         <Outlet />
       </main>
       
-      {/* Site footer */}
+      {/* Site Footer */}
       <Footer />
     </div>
   );
