@@ -1,17 +1,19 @@
 /**
  * CheckoutPage - Full Stripe Elements Integration
  * 
- * Handles the checkout process with:
- * - Shipping address form
- * - Order summary
+ * Features:
+ * - Radar.io address autocomplete (100K free/month)
+ * - react-phone-number-input for formatted phone
  * - Stripe Payment Element
  * - Order confirmation
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { ShoppingBag, ArrowLeft, CheckCircle, Loader2 } from 'lucide-react';
+import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
+import { ShoppingBag, ArrowLeft, CheckCircle, Loader2, MapPin } from 'lucide-react';
 import { useCartStore } from '../store/cartStore';
 import { useAuthStore } from '../store/authStore';
 import api from '../services/api';
@@ -21,12 +23,136 @@ let stripePromise = null;
 
 const getStripe = async () => {
   if (!stripePromise) {
-    // Fetch publishable key from backend
     const { data } = await api.get('/checkout/config');
     stripePromise = loadStripe(data.publishableKey);
   }
   return stripePromise;
 };
+
+// Initialize Radar.io
+const initRadar = () => {
+  if (window.Radar) return Promise.resolve();
+  
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://js.radar.com/v4/radar.min.js';
+    script.onload = () => {
+      window.Radar.initialize(import.meta.env.VITE_RADAR_PUBLISHABLE_KEY);
+      resolve();
+    };
+    document.head.appendChild(script);
+  });
+};
+
+// Address Autocomplete Component
+function AddressAutocomplete({ value, onChange, onSelect, placeholder }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const wrapperRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const searchAddress = async (query) => {
+    if (!query || query.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await initRadar();
+      const result = await window.Radar.autocomplete({
+        query,
+        layers: ['address'],
+        country: 'US',
+        limit: 5,
+      });
+      
+      setSuggestions(result.addresses || []);
+      setIsOpen(true);
+    } catch (err) {
+      console.error('Radar autocomplete error:', err);
+      setSuggestions([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    onChange(val);
+
+    // Debounce the search
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchAddress(val), 300);
+  };
+
+  const handleSelect = (address) => {
+    // Parse the Radar address into our form fields
+    const parsed = {
+      address1: address.addressLabel || address.formattedAddress?.split(',')[0] || '',
+      city: address.city || '',
+      state: address.stateCode || address.state || '',
+      zipCode: address.postalCode || '',
+      country: address.countryCode || 'US',
+      // Full formatted for display
+      formatted: address.formattedAddress || '',
+    };
+    
+    onSelect(parsed);
+    setIsOpen(false);
+    setSuggestions([]);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          value={value}
+          onChange={handleInputChange}
+          onFocus={() => suggestions.length > 0 && setIsOpen(true)}
+          placeholder={placeholder}
+          className="input w-full pr-10"
+          autoComplete="off"
+        />
+        {isLoading ? (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-street-400" />
+        ) : (
+          <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-street-400" />
+        )}
+      </div>
+      
+      {isOpen && suggestions.length > 0 && (
+        <ul className="absolute z-50 w-full mt-1 bg-white border border-street-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+          {suggestions.map((address, index) => (
+            <li
+              key={index}
+              onClick={() => handleSelect(address)}
+              className="px-4 py-3 hover:bg-street-50 cursor-pointer border-b border-street-100 last:border-b-0"
+            >
+              <p className="font-medium text-sm">{address.addressLabel || address.formattedAddress?.split(',')[0]}</p>
+              <p className="text-xs text-street-500">
+                {address.city}, {address.stateCode} {address.postalCode}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // Payment Form Component (used inside Elements provider)
 function PaymentForm({ orderNumber, onSuccess }) {
@@ -151,6 +277,18 @@ function CheckoutPage() {
     return localStorage.getItem('hyow_cart_session');
   };
 
+  // Handle address selection from autocomplete
+  const handleAddressSelect = (parsed) => {
+    setShippingAddress(prev => ({
+      ...prev,
+      address1: parsed.address1,
+      city: parsed.city,
+      state: parsed.state,
+      zipCode: parsed.zipCode,
+      country: parsed.country,
+    }));
+  };
+
   // Handle shipping form submit
   const handleShippingSubmit = async (e) => {
     e.preventDefault();
@@ -164,6 +302,11 @@ function CheckoutPage() {
         if (!shippingAddress[field]) {
           throw new Error(`${field.replace(/([A-Z])/g, ' $1').trim()} is required`);
         }
+      }
+
+      // Validate phone if provided
+      if (shippingAddress.phone && !isValidPhoneNumber(shippingAddress.phone)) {
+        throw new Error('Please enter a valid phone number');
       }
 
       // Create payment intent
@@ -187,20 +330,15 @@ function CheckoutPage() {
   // Handle successful payment
   const handlePaymentSuccess = async (paymentIntentId) => {
     try {
-      // Confirm order on backend
       await api.post('/checkout/confirm', {
         orderNumber,
         paymentIntentId,
         sessionId: getSessionId(),
       });
-
-      // Clear local cart state
       await fetchCart();
-      
       setStep('success');
     } catch (err) {
       console.error('Order confirmation error:', err);
-      // Payment succeeded but confirmation failed - order will be confirmed via webhook
       setStep('success');
     }
   };
@@ -331,23 +469,23 @@ function CheckoutPage() {
 
                 <div>
                   <label className="block text-sm font-medium mb-2">Phone</label>
-                  <input
-                    type="tel"
+                  <PhoneInput
+                    international={false}
+                    defaultCountry="US"
                     value={shippingAddress.phone}
-                    onChange={updateField('phone')}
-                    className="input w-full"
+                    onChange={(value) => setShippingAddress(prev => ({ ...prev, phone: value || '' }))}
+                    className="phone-input-wrapper"
+                    placeholder="(555) 123-4567"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium mb-2">Address *</label>
-                  <input
-                    type="text"
+                  <AddressAutocomplete
                     value={shippingAddress.address1}
-                    onChange={updateField('address1')}
-                    className="input w-full"
-                    placeholder="Street address"
-                    required
+                    onChange={(val) => setShippingAddress(prev => ({ ...prev, address1: val }))}
+                    onSelect={handleAddressSelect}
+                    placeholder="Start typing your address..."
                   />
                 </div>
 
@@ -381,6 +519,7 @@ function CheckoutPage() {
                       onChange={updateField('state')}
                       className="input w-full"
                       placeholder="e.g., NY"
+                      maxLength={2}
                       required
                     />
                   </div>
@@ -445,6 +584,7 @@ function CheckoutPage() {
                     <p>{shippingAddress.address1}</p>
                     {shippingAddress.address2 && <p>{shippingAddress.address2}</p>}
                     <p>{shippingAddress.city}, {shippingAddress.state} {shippingAddress.zipCode}</p>
+                    {shippingAddress.phone && <p className="mt-1 text-street-500">{shippingAddress.phone}</p>}
                     <button 
                       type="button"
                       onClick={() => setStep('shipping')}
@@ -534,6 +674,34 @@ function CheckoutPage() {
           </div>
         </div>
       </div>
+
+      {/* Phone Input Custom Styles */}
+      <style>{`
+        .phone-input-wrapper {
+          display: flex;
+          align-items: center;
+        }
+        .phone-input-wrapper .PhoneInputCountry {
+          padding: 0.75rem;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-right: none;
+          border-radius: 0.375rem 0 0 0.375rem;
+        }
+        .phone-input-wrapper .PhoneInputInput {
+          flex: 1;
+          padding: 0.75rem 1rem;
+          border: 1px solid #e2e8f0;
+          border-radius: 0 0.375rem 0.375rem 0;
+          font-size: 1rem;
+          outline: none;
+          transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .phone-input-wrapper .PhoneInputInput:focus {
+          border-color: #0B1D3A;
+          box-shadow: 0 0 0 3px rgba(11, 29, 58, 0.1);
+        }
+      `}</style>
     </div>
   );
 }
