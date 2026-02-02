@@ -1,63 +1,64 @@
-/**
- * Home Page
- * 
- * The landing page for Hold Your Own Brand. This is the first impression
- * customers get, so it needs to:
- * 1. Communicate the brand identity immediately
- * 2. Showcase featured and new products
- * 3. Drive visitors to browse the catalog
- */
+// HomePage.jsx - Updated with better button styling
+// Fix for the "Our Story" button visibility issue
 
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import api from '../services/api';
 import ProductCard from '../components/product/ProductCard';
 
-function HomePage() {
+export default function HomePage() {
   const [featuredProducts, setFeaturedProducts] = useState([]);
-  const [newArrivals, setNewArrivals] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
-        const [featuredRes, newRes] = await Promise.all([
-          api.get('/products/featured'),
-          api.get('/products/new-arrivals')
+        const [productsRes, categoriesRes] = await Promise.all([
+          api.products.getFeatured(),
+          api.categories.getAll()
         ]);
-        setFeaturedProducts(featuredRes.data.products);
-        setNewArrivals(newRes.data.products);
+        setFeaturedProducts(productsRes.data.products || []);
+        setCategories(categoriesRes.data.categories || []);
       } catch (error) {
-        console.error('Failed to fetch products:', error);
+        console.error('Error fetching home data:', error);
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
-    fetchProducts();
+    fetchData();
   }, []);
 
   return (
-    <div>
+    <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative bg-ocean-950 text-white">
-        <div className="container-custom py-24 lg:py-32">
+      <section className="bg-hyow-navy text-white py-20 md:py-32">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
-            <h1 className="font-display text-5xl lg:text-7xl tracking-wide leading-tight mb-6">
-              OWN YOUR
-              <span className="block text-sunset-500">NARRATIVE</span>
+            <h1 className="font-display text-4xl md:text-6xl font-bold mb-4">
+              OWN YOUR<br />
+              <span className="text-hyow-gold">NARRATIVE</span>
             </h1>
-            <p className="text-lg lg:text-xl text-ocean-200 mb-8 leading-relaxed">
-              From the streets of Harlem to the beaches of California. 
-              Premium streetwear for those who write their own story.
+            <p className="text-lg md:text-xl text-gray-300 mb-8">
+              From the streets of Harlem to the beaches of California. Premium 
+              streetwear for those who write their own story.
             </p>
             <div className="flex flex-wrap gap-4">
-              <Link to="/products" className="btn-accent">
-                Shop Now
-                <ArrowRight className="w-5 h-5 ml-2" />
+              <Link
+                to="/products"
+                className="inline-flex items-center px-6 py-3 bg-hyow-gold text-hyow-navy font-semibold rounded hover:bg-hyow-gold/90 transition-colors"
+              >
+                SHOP NOW
+                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
               </Link>
-              <Link to="/about" className="btn-secondary border-white text-white hover:bg-white hover:text-ocean-950">
-                Our Story
+              {/* FIXED: Our Story button now has visible border and better contrast */}
+              <Link
+                to="/about"
+                className="inline-flex items-center px-6 py-3 border-2 border-white text-white font-semibold rounded hover:bg-white hover:text-hyow-navy transition-colors"
+              >
+                OUR STORY
               </Link>
             </div>
           </div>
@@ -65,70 +66,117 @@ function HomePage() {
       </section>
 
       {/* Featured Products */}
-      <section className="section">
-        <div className="container-custom">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="font-display text-3xl lg:text-4xl tracking-wider">FEATURED</h2>
-            <Link to="/products?featured=true" className="link flex items-center gap-1">
-              View All <ArrowRight className="w-4 h-4" />
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center mb-8">
+            <h2 className="font-display text-2xl md:text-3xl font-bold text-hyow-navy">
+              FEATURED
+            </h2>
+            <Link 
+              to="/products" 
+              className="text-hyow-gold hover:text-hyow-gold/80 font-medium flex items-center"
+            >
+              View All
+              <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </Link>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-            {isLoading
-              ? [...Array(4)].map((_, i) => (
-                  <div key={i} className="aspect-product bg-street-100 animate-pulse" />
-                ))
-              : featuredProducts.slice(0, 4).map((product) => (
-                  <ProductCard key={product.id} product={product} />
-                ))
-            }
-          </div>
+          
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="bg-gray-200 aspect-square rounded-lg mb-4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                </div>
+              ))}
+            </div>
+          ) : featuredProducts.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {featuredProducts.slice(0, 4).map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <p>New products coming soon. Check back later!</p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Brand Story Banner */}
-      <section className="bg-street-900 text-white py-16 lg:py-24">
-        <div className="container-custom text-center">
-          <h2 className="font-display text-3xl lg:text-5xl tracking-wider mb-6">
-            FROM THE STREETS TO SUCCESS
-          </h2>
-          <p className="max-w-2xl mx-auto text-street-300 text-lg leading-relaxed mb-8">
-            Every piece tells a story of perseverance, transformation, and triumph.
-          </p>
-          <Link to="/about" className="btn-primary bg-sunset-600 hover:bg-sunset-700">
-            Read Our Story
-          </Link>
-        </div>
-      </section>
-
-      {/* Categories Grid */}
-      <section className="section bg-street-50">
-        <div className="container-custom">
-          <h2 className="font-display text-3xl lg:text-4xl tracking-wider text-center mb-12">
+      {/* Shop by Category */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="font-display text-2xl md:text-3xl font-bold text-hyow-navy mb-8 text-center">
             SHOP BY CATEGORY
           </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-            {[
-              { name: 'T-Shirts', slug: 'tees', color: 'bg-ocean-600' },
-              { name: 'Hoodies', slug: 'hoodies', color: 'bg-street-700' },
-              { name: 'Hats', slug: 'hats', color: 'bg-sunset-600' },
-              { name: 'Accessories', slug: 'accessories', color: 'bg-palm-700' },
-            ].map((category) => (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {categories.map((category) => (
               <Link
-                key={category.slug}
-                to={`/category/${category.slug}`}
-                className={`${category.color} aspect-square flex items-center justify-center
-                           text-white font-display text-2xl lg:text-3xl tracking-wider
-                           hover:opacity-90 transition-opacity`}
+                key={category.id}
+                to={`/products?category=${category.slug}`}
+                className="group relative aspect-square bg-hyow-navy rounded-lg overflow-hidden hover:shadow-xl transition-shadow"
               >
-                {category.name}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
+                <div className="absolute bottom-4 left-4 right-4">
+                  <h3 className="font-display text-white text-lg md:text-xl font-bold group-hover:text-hyow-gold transition-colors">
+                    {category.name.toUpperCase()}
+                  </h3>
+                  <p className="text-gray-300 text-sm">
+                    {category.productCount || 0} items
+                  </p>
+                </div>
               </Link>
             ))}
           </div>
         </div>
       </section>
+
+      {/* Brand Story CTA */}
+      <section className="py-20 bg-hyow-navy text-white text-center">
+        <div className="max-w-3xl mx-auto px-4">
+          <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">
+            FROM THE STREETS TO SUCCESS
+          </h2>
+          <p className="text-gray-300 text-lg mb-8">
+            Every piece tells a story of perseverance, transformation, and triumph.
+          </p>
+          <Link
+            to="/about"
+            className="inline-flex items-center px-8 py-4 bg-hyow-gold text-hyow-navy font-bold rounded hover:bg-hyow-gold/90 transition-colors"
+          >
+            READ OUR STORY
+          </Link>
+        </div>
+      </section>
+
+      {/* Newsletter */}
+      <section className="py-16 bg-white">
+        <div className="max-w-xl mx-auto px-4 text-center">
+          <h2 className="font-display text-2xl font-bold text-hyow-navy mb-4">
+            JOIN THE MOVEMENT
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Get early access to drops, exclusive offers, and stories from the streets.
+          </p>
+          <form className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="email"
+              placeholder="Enter your email"
+              className="flex-1 px-4 py-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-hyow-gold"
+            />
+            <button
+              type="submit"
+              className="px-6 py-3 bg-hyow-navy text-white font-semibold rounded hover:bg-hyow-navy/90 transition-colors"
+            >
+              SUBSCRIBE
+            </button>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }
-
-export default HomePage;
