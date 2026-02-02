@@ -33,7 +33,8 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     throw new AppError('User ID or session ID required', 400);
   }
 
-  // Get cart items
+  // Get cart items - joining through product_variants to products
+  // Note: price comes from products table (p.price), NOT product_variants
   let cartResult;
   if (userId) {
     cartResult = await db.query(`
@@ -41,11 +42,12 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
         ci.id,
         ci.quantity,
         pv.id as variant_id,
-        pv.price as variant_price,
+        pv.size,
+        pv.color,
         pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
-        p.price as base_price,
+        p.price,
         p.slug
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
@@ -59,11 +61,12 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
         ci.id,
         ci.quantity,
         pv.id as variant_id,
-        pv.price as variant_price,
+        pv.size,
+        pv.color,
         pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
-        p.price as base_price,
+        p.price,
         p.slug
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
@@ -83,11 +86,12 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
 
   for (const item of cartResult.rows) {
     // Check stock
-    if (item.quantity > item.stock_quantity) {
+    if (item.stock_quantity !== null && item.quantity > item.stock_quantity) {
       throw new AppError(`Insufficient stock for ${item.product_name}. Only ${item.stock_quantity} available.`, 400);
     }
 
-    const unitPrice = parseFloat(item.variant_price) || parseFloat(item.base_price);
+    // Price comes from products table
+    const unitPrice = parseFloat(item.price);
     const lineTotal = unitPrice * item.quantity;
     subtotal += lineTotal;
 
@@ -95,6 +99,8 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
       variantId: item.variant_id,
       productId: item.product_id,
       productName: item.product_name,
+      size: item.size,
+      color: item.color,
       quantity: item.quantity,
       unitPrice,
       lineTotal
@@ -243,11 +249,11 @@ router.post('/confirm', optionalAuth, asyncHandler(async (req, res) => {
     }
 
     // Reduce inventory
-    const items = await db.query('SELECT variant_id, quantity FROM order_items WHERE order_id = $1', [orderResult.rows[0].id]);
-    for (const item of items.rows) {
+    const orderItems = await db.query('SELECT variant_id, quantity FROM order_items WHERE order_id = $1', [orderResult.rows[0].id]);
+    for (const item of orderItems.rows) {
       await db.query(`
         UPDATE product_variants 
-        SET quantity = quantity - $1 
+        SET quantity = GREATEST(0, quantity - $1)
         WHERE id = $2
       `, [item.quantity, item.variant_id]);
     }
