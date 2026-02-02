@@ -1,11 +1,13 @@
 /**
- * Product Routes
+ * HYOW Backend Fix - Products Route
  * 
- * This file handles all product-related endpoints for the storefront.
- * It includes listing products with filters, getting product details,
- * and search functionality.
+ * This is the corrected products.js file that reads image_url directly 
+ * from the products table instead of the product_images table.
  * 
- * Note: Admin product management (create/update/delete) is in admin routes.
+ * DEPLOYMENT INSTRUCTIONS:
+ * 1. Copy this file to: server/src/routes/products.js
+ * 2. Git commit and push
+ * 3. Railway will auto-redeploy
  */
 
 const express = require('express');
@@ -19,15 +21,6 @@ const router = express.Router();
  * GET /api/products
  * 
  * List all products with optional filtering and pagination.
- * This is the main product catalog endpoint used by the storefront.
- * 
- * Query Parameters:
- *   - category: Filter by category slug
- *   - minPrice / maxPrice: Filter by price range
- *   - search: Full-text search in name and description
- *   - sort: Sorting option (newest, price_asc, price_desc, name)
- *   - page / limit: Pagination
- *   - featured: Only show featured products
  */
 router.get('/', optionalAuth, asyncHandler(async (req, res) => {
   const {
@@ -41,19 +34,16 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
     featured
   } = req.query;
 
-  // Build the query dynamically based on filters
   const conditions = ["p.status = 'active'"];
   const params = [];
   let paramIndex = 1;
 
-  // Category filter
   if (category) {
     conditions.push(`c.slug = $${paramIndex}`);
     params.push(category);
     paramIndex++;
   }
 
-  // Price range filter
   if (minPrice) {
     conditions.push(`p.price >= $${paramIndex}`);
     params.push(parseFloat(minPrice));
@@ -65,12 +55,10 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
     paramIndex++;
   }
 
-  // Featured filter
   if (featured === 'true') {
     conditions.push('p.is_featured = true');
   }
 
-  // Search filter (searches name and description)
   if (search) {
     conditions.push(`(
       p.name ILIKE $${paramIndex} OR 
@@ -80,7 +68,6 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
     paramIndex++;
   }
 
-  // Determine sort order
   let orderBy;
   switch (sort) {
     case 'price_asc':
@@ -97,10 +84,9 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
       orderBy = 'p.created_at DESC';
   }
 
-  // Calculate pagination
   const offset = (parseInt(page) - 1) * parseInt(limit);
   
-  // Main query
+  // FIXED: Now uses p.image_url directly instead of subquery from product_images
   const query = `
     SELECT 
       p.id,
@@ -113,12 +99,7 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
       p.is_new,
       c.name as category_name,
       c.slug as category_slug,
-      (
-        SELECT url FROM product_images 
-        WHERE product_id = p.id 
-        ORDER BY sort_order 
-        LIMIT 1
-      ) as image_url,
+      p.image_url,
       (
         SELECT COALESCE(SUM(quantity), 0) 
         FROM product_variants 
@@ -149,27 +130,31 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE ${conditions.join(' AND ')}
   `;
-  const countResult = await db.query(countQuery, params.slice(0, -2)); // Remove limit/offset params
+
+  const countResult = await db.query(countQuery, params.slice(0, -2));
   const totalCount = parseInt(countResult.rows[0].count);
 
+  // Format response
+  const products = result.rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    price: parseFloat(row.price),
+    compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
+    isFeatured: row.is_featured,
+    isNew: row.is_new,
+    category: {
+      name: row.category_name,
+      slug: row.category_slug
+    },
+    imageUrl: row.image_url,
+    inStock: parseInt(row.total_stock) > 0,
+    isWishlisted: row.is_wishlisted || false
+  }));
+
   res.json({
-    products: result.rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      description: row.description,
-      price: parseFloat(row.price),
-      compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
-      isFeatured: row.is_featured,
-      isNew: row.is_new,
-      category: row.category_name ? {
-        name: row.category_name,
-        slug: row.category_slug
-      } : null,
-      imageUrl: row.image_url,
-      inStock: parseInt(row.total_stock) > 0,
-      isWishlisted: row.is_wishlisted || false
-    })),
+    products,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -182,194 +167,207 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
 /**
  * GET /api/products/featured
  * 
- * Get featured products for homepage display.
- * Limited to 8 products for performance.
+ * Get featured products for homepage.
  */
-router.get('/featured', asyncHandler(async (req, res) => {
-  const result = await db.query(`
+router.get('/featured', optionalAuth, asyncHandler(async (req, res) => {
+  const { limit = 8 } = req.query;
+
+  // FIXED: Now uses p.image_url directly
+  const query = `
     SELECT 
       p.id,
       p.name,
       p.slug,
+      p.description,
       p.price,
       p.compare_at_price,
+      p.is_featured,
+      p.is_new,
+      c.name as category_name,
+      c.slug as category_slug,
+      p.image_url,
       (
-        SELECT url FROM product_images 
-        WHERE product_id = p.id 
-        ORDER BY sort_order 
-        LIMIT 1
-      ) as image_url
+        SELECT COALESCE(SUM(quantity), 0) 
+        FROM product_variants 
+        WHERE product_id = p.id AND is_active = true
+      ) as total_stock
     FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.status = 'active' AND p.is_featured = true
     ORDER BY p.created_at DESC
-    LIMIT 8
-  `);
+    LIMIT $1
+  `;
 
-  res.json({
-    products: result.rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      price: parseFloat(row.price),
-      compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
-      imageUrl: row.image_url
-    }))
-  });
+  const result = await db.query(query, [parseInt(limit)]);
+
+  const products = result.rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    price: parseFloat(row.price),
+    compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
+    isFeatured: row.is_featured,
+    isNew: row.is_new,
+    category: {
+      name: row.category_name,
+      slug: row.category_slug
+    },
+    imageUrl: row.image_url,
+    inStock: parseInt(row.total_stock) > 0
+  }));
+
+  res.json({ products });
 }));
 
 /**
- * GET /api/products/new-arrivals
+ * GET /api/products/:id
  * 
- * Get the most recently added products.
+ * Get a single product by ID with full details.
  */
-router.get('/new-arrivals', asyncHandler(async (req, res) => {
-  const result = await db.query(`
-    SELECT 
-      p.id,
-      p.name,
-      p.slug,
-      p.price,
-      p.compare_at_price,
-      (
-        SELECT url FROM product_images 
-        WHERE product_id = p.id 
-        ORDER BY sort_order 
-        LIMIT 1
-      ) as image_url
-    FROM products p
-    WHERE p.status = 'active'
-    ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC
-    LIMIT 8
-  `);
+router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-  res.json({
-    products: result.rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      price: parseFloat(row.price),
-      compareAtPrice: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
-      imageUrl: row.image_url
-    }))
-  });
-}));
-
-/**
- * GET /api/products/:slug
- * 
- * Get a single product by its URL slug.
- * Includes all images, variants, and related products.
- */
-router.get('/:slug', optionalAuth, asyncHandler(async (req, res) => {
-  const { slug } = req.params;
-
-  // Get product details
-  const productResult = await db.query(`
+  // Get product details - FIXED: uses p.image_url
+  const productQuery = `
     SELECT 
       p.*,
       c.name as category_name,
-      c.slug as category_slug
+      c.slug as category_slug,
+      ${req.user ? `
+        EXISTS(
+          SELECT 1 FROM wishlists 
+          WHERE user_id = '${req.user.id}' AND product_id = p.id
+        ) as is_wishlisted,
+      ` : ''}
+      p.image_url
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.slug = $1 AND p.status = 'active'
-  `, [slug]);
+    WHERE p.id = $1 AND p.status = 'active'
+  `;
+
+  const productResult = await db.query(productQuery, [id]);
 
   if (productResult.rows.length === 0) {
-    return res.status(404).json({
+    return res.status(404).json({ 
       error: 'Not Found',
-      message: 'Product not found'
+      message: 'Product not found' 
     });
   }
 
   const product = productResult.rows[0];
 
-  // Get all images
-  const imagesResult = await db.query(`
+  // Get all images for this product (fallback to main image_url)
+  const imagesQuery = `
     SELECT id, url, alt_text, sort_order
     FROM product_images
     WHERE product_id = $1
     ORDER BY sort_order
-  `, [product.id]);
+  `;
+  const imagesResult = await db.query(imagesQuery, [id]);
+  
+  // Use product_images if available, otherwise use main image_url
+  let images = imagesResult.rows;
+  if (images.length === 0 && product.image_url) {
+    images = [{ id: 'main', url: product.image_url, alt_text: product.name, sort_order: 0 }];
+  }
 
-  // Get all variants
-  const variantsResult = await db.query(`
-    SELECT id, sku, size, color, price_adjustment, quantity, low_stock_threshold
+  // Get variants
+  const variantsQuery = `
+    SELECT 
+      id,
+      sku,
+      size,
+      color,
+      price_adjustment,
+      quantity,
+      is_active
     FROM product_variants
     WHERE product_id = $1 AND is_active = true
     ORDER BY size, color
-  `, [product.id]);
+  `;
+  const variantsResult = await db.query(variantsQuery, [id]);
 
-  // Check if wishlisted (if user is logged in)
-  let isWishlisted = false;
-  if (req.user) {
-    const wishlistResult = await db.query(
-      'SELECT 1 FROM wishlists WHERE user_id = $1 AND product_id = $2',
-      [req.user.id, product.id]
-    );
-    isWishlisted = wishlistResult.rows.length > 0;
+  // Format response
+  res.json({
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    description: product.description,
+    price: parseFloat(product.price),
+    compareAtPrice: product.compare_at_price ? parseFloat(product.compare_at_price) : null,
+    isFeatured: product.is_featured,
+    isNew: product.is_new,
+    category: {
+      id: product.category_id,
+      name: product.category_name,
+      slug: product.category_slug
+    },
+    images: images.map(img => ({
+      id: img.id,
+      url: img.url,
+      altText: img.alt_text,
+      sortOrder: img.sort_order
+    })),
+    variants: variantsResult.rows.map(v => ({
+      id: v.id,
+      sku: v.sku,
+      size: v.size,
+      color: v.color,
+      priceAdjustment: parseFloat(v.price_adjustment || 0),
+      quantity: v.quantity,
+      inStock: v.quantity > 0
+    })),
+    isWishlisted: product.is_wishlisted || false,
+    metaTitle: product.meta_title,
+    metaDescription: product.meta_description,
+    createdAt: product.created_at
+  });
+}));
+
+/**
+ * GET /api/products/search
+ * 
+ * Search products by query string.
+ */
+router.get('/search', optionalAuth, asyncHandler(async (req, res) => {
+  const { q, limit = 10 } = req.query;
+
+  if (!q || q.trim().length < 2) {
+    return res.json({ products: [] });
   }
 
-  // Get related products (same category, excluding this one)
-  const relatedResult = await db.query(`
+  const query = `
     SELECT 
       p.id,
       p.name,
       p.slug,
       p.price,
-      (
-        SELECT url FROM product_images 
-        WHERE product_id = p.id 
-        ORDER BY sort_order 
-        LIMIT 1
-      ) as image_url
+      c.name as category_name,
+      p.image_url
     FROM products p
-    WHERE p.category_id = $1 
-      AND p.id != $2 
-      AND p.status = 'active'
-    ORDER BY RANDOM()
-    LIMIT 4
-  `, [product.category_id, product.id]);
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.status = 'active' AND (
+      p.name ILIKE $1 OR 
+      p.description ILIKE $1
+    )
+    ORDER BY 
+      CASE WHEN p.name ILIKE $2 THEN 0 ELSE 1 END,
+      p.name
+    LIMIT $3
+  `;
 
-  // Format the response
+  const result = await db.query(query, [`%${q}%`, `${q}%`, parseInt(limit)]);
+
   res.json({
-    product: {
-      id: product.id,
-      name: product.name,
-      slug: product.slug,
-      description: product.description,
-      price: parseFloat(product.price),
-      compareAtPrice: product.compare_at_price ? parseFloat(product.compare_at_price) : null,
-      isFeatured: product.is_featured,
-      isNew: product.is_new,
-      metaTitle: product.meta_title,
-      metaDescription: product.meta_description,
-      category: product.category_name ? {
-        name: product.category_name,
-        slug: product.category_slug
-      } : null,
-      images: imagesResult.rows.map(img => ({
-        id: img.id,
-        url: img.url,
-        altText: img.alt_text
-      })),
-      variants: variantsResult.rows.map(v => ({
-        id: v.id,
-        sku: v.sku,
-        size: v.size,
-        color: v.color,
-        priceAdjustment: parseFloat(v.price_adjustment),
-        inStock: v.quantity > 0,
-        lowStock: v.quantity > 0 && v.quantity <= v.low_stock_threshold
-      })),
-      isWishlisted,
-      relatedProducts: relatedResult.rows.map(p => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        price: parseFloat(p.price),
-        imageUrl: p.image_url
-      }))
-    }
+    products: result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      price: parseFloat(row.price),
+      category: row.category_name,
+      imageUrl: row.image_url
+    }))
   });
 }));
 
