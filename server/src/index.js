@@ -1,165 +1,219 @@
-/**
- * Hold Your Own Brand - API Server
- * 
- * This is the main entry point for the Express server. It sets up all the
- * middleware, routes, and starts listening for requests.
- * 
- * Security is a top priority, so we use:
- * - Helmet for HTTP security headers
- * - CORS with restricted origins
- * - Rate limiting to prevent abuse
- * - Input validation on all routes
- */
+// HYOW E-Commerce - Express Server
+// This is the main entry point for the backend API
 
 require('dotenv').config();
-
 const express = require('express');
-const helmet = require('helmet');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { Pool } = require('pg');
 
-// Import route modules
+// Import routes
 const authRoutes = require('./routes/auth');
-const productRoutes = require('./routes/products');
-const categoryRoutes = require('./routes/categories');
+const productsRoutes = require('./routes/products');
+const categoriesRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
-const orderRoutes = require('./routes/orders');
-const userRoutes = require('./routes/users');
+const ordersRoutes = require('./routes/orders');
+const usersRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
-const webhookRoutes = require('./routes/webhooks');
+const webhooksRoutes = require('./routes/webhooks');
 
-// Import middleware
-const { errorHandler } = require('./middleware/errorHandler');
-
-// Initialize Express app
 const app = express();
 
-// ===========================================
-// SECURITY MIDDLEWARE
-// ===========================================
-
-// Helmet adds various HTTP headers that help protect against common attacks
-// like XSS, clickjacking, and other code injection attacks
+// Trust first proxy (Railway runs behind a load balancer)
+// This is CRITICAL for rate limiting and secure cookies to work correctly
 app.set('trust proxy', 1);
-app.use(helmet());
 
-// Configure CORS (Cross-Origin Resource Sharing)
-// This controls which domains can make requests to our API
+// =============================================================================
+// CORS CONFIGURATION - CRITICAL FOR FRONTEND CONNECTION
+// =============================================================================
+// 
+// This configuration allows the Vercel-hosted frontend to communicate with
+// the Railway-hosted backend. The CLIENT_URL environment variable must be
+// set in Railway to the exact origin of the frontend (no trailing slash).
+//
+
+const allowedOrigins = [
+  process.env.CLIENT_URL,                           // Production frontend (Vercel)
+  'http://localhost:5173',                          // Vite dev server
+  'http://localhost:3000',                          // Alternative local dev
+  'https://client-phi-tawny.vercel.app',           // Explicit Vercel URL (backup)
+  'https://holdyourownbrand.vercel.app',           // Future Vercel URL
+].filter(Boolean); // Remove any undefined values
+
+console.log('🔐 CORS Configuration:');
+console.log('   CLIENT_URL from env:', process.env.CLIENT_URL || 'NOT SET');
+console.log('   Allowed origins:', allowedOrigins);
+
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production'
-    ? [
-        'https://holdyourownbrand.com',
-        'https://www.holdyourownbrand.com',
-        // Add other production domains as needed
-      ]
-    : ['http://localhost:5173', 'http://localhost:3000'], // Development origins
-  credentials: true, // Allow cookies to be sent with requests
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Log rejected origins for debugging
+    console.warn('⚠️ CORS rejected origin:', origin);
+    console.warn('   Allowed origins:', allowedOrigins);
+    
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,                    // Allow cookies and auth headers
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+  ],
+  exposedHeaders: ['Set-Cookie'],
+  maxAge: 86400,                        // Cache preflight for 24 hours
 };
+
+// Apply CORS middleware BEFORE other middleware
 app.use(cors(corsOptions));
 
-// Rate limiting to prevent brute force and DoS attacks
-// This limits each IP to a certain number of requests per time window
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 requests per window
-  message: {
-    error: 'Too many requests, please try again later.',
-    retryAfter: '15 minutes'
-  },
-  standardHeaders: true, // Return rate limit info in headers
-  legacyHeaders: false
-});
-app.use('/api/', limiter);
+// Handle preflight requests explicitly for all routes
+app.options('*', cors(corsOptions));
 
-// Stricter rate limit for authentication endpoints (prevent brute force attacks)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Only 10 login attempts per 15 minutes
-  message: {
-    error: 'Too many login attempts, please try again later.',
-    retryAfter: '15 minutes'
+// =============================================================================
+// SECURITY & PARSING MIDDLEWARE
+// =============================================================================
+
+// Security headers (but allow CORS to override where needed)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
+
+// Parse JSON bodies (except for webhooks which need raw body)
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/webhooks/stripe') {
+    next();
+  } else {
+    express.json({ limit: '10mb' })(req, res, next);
   }
 });
 
-// ===========================================
-// BODY PARSING MIDDLEWARE
-// ===========================================
-
-// Note: Stripe webhooks need the raw body, so we handle that route specially
-app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
-
-// For all other routes, parse JSON bodies
-app.use(express.json({ limit: '10mb' }));
-
-// Parse URL-encoded bodies (for form submissions)
+// Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ===========================================
-// HEALTH CHECK
-// ===========================================
+// =============================================================================
+// RATE LIMITING
+// =============================================================================
 
-// Simple health check endpoint for monitoring and Railway
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,     // 15 minutes
+  max: 100,                     // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests', message: 'Please try again later' },
+});
+
+// Apply rate limiting to API routes only (not webhooks)
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/webhooks')) {
+    return next();
+  }
+  limiter(req, res, next);
+});
+
+// =============================================================================
+// DATABASE CONNECTION
+// =============================================================================
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Make pool available to routes
+app.locals.pool = pool;
+
+// =============================================================================
+// HEALTH CHECK ENDPOINT
+// =============================================================================
+
 app.get('/health', (req, res) => {
-  res.status(200).json({
+  res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    cors: {
+      clientUrl: process.env.CLIENT_URL || 'NOT SET',
+      allowedOrigins: allowedOrigins,
+    },
   });
 });
 
-// ===========================================
+// =============================================================================
 // API ROUTES
-// ===========================================
+// =============================================================================
 
-// Apply stricter rate limiting to auth routes
-app.use('/api/auth', authLimiter, authRoutes);
-
-// Standard API routes
-app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/products', productsRoutes);
+app.use('/api/categories', categoriesRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/orders', ordersRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/webhooks', webhookRoutes);
+app.use('/api/webhooks', webhooksRoutes);
 
-// ===========================================
+// =============================================================================
 // ERROR HANDLING
-// ===========================================
+// =============================================================================
 
 // 404 handler for unknown routes
 app.use((req, res) => {
   res.status(404).json({
     error: 'Not Found',
-    message: `The requested resource ${req.originalUrl} does not exist`
+    message: `The requested resource ${req.path} does not exist`,
   });
 });
 
-// Global error handler (must be last middleware)
-app.use(errorHandler);
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Server error:', err);
+  
+  // Handle CORS errors specifically
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({
+      error: 'CORS Error',
+      message: 'Origin not allowed',
+      allowedOrigins: allowedOrigins,
+    });
+  }
+  
+  res.status(err.status || 500).json({
+    error: err.name || 'Internal Server Error',
+    message: process.env.NODE_ENV === 'production' 
+      ? 'An unexpected error occurred' 
+      : err.message,
+  });
+});
 
-// ===========================================
+// =============================================================================
 // START SERVER
-// ===========================================
+// =============================================================================
 
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   🔥 HOLD YOUR OWN BRAND - API Server                     ║
-║                                                           ║
-║   Status:      Running                                    ║
-║   Port:        ${PORT}                                        ║
-║   Environment: ${process.env.NODE_ENV || 'development'}                              ║
-║                                                           ║
-║   Own Your Narrative. Own Your Future.                    ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-  `);
+  console.log('');
+  console.log('══════════════════════════════════════════════════════════════');
+  console.log('  🏪 HYOW E-Commerce Backend');
+  console.log('══════════════════════════════════════════════════════════════');
+  console.log(`  ✅ Server running on port ${PORT}`);
+  console.log(`  🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`  🔗 Client URL: ${process.env.CLIENT_URL || 'NOT SET'}`);
+  console.log('══════════════════════════════════════════════════════════════');
+  console.log('');
 });
 
 module.exports = app;
