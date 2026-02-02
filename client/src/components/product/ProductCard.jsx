@@ -4,27 +4,32 @@
  * A reusable card for displaying products in grid layouts throughout the site.
  * This component is used on the homepage, category pages, and search results.
  *
- * The card is designed to be visually appealing while also being performant:
- * - Images use lazy loading to improve initial page load
- * - Hover effects use CSS transforms for smooth 60fps animations
- * - The wishlist button only appears on hover to reduce visual clutter
- *
- * FIXED: Wishlist button now actually calls the API and toggles state
+ * Features:
+ * - Lazy loading images for performance
+ * - Hover effects with smooth CSS transforms
+ * - Wishlist button (heart) - appears on hover, toggles wishlist via API
+ * - Quick add-to-cart button (+) - adds default variant to cart without opening detail page
  */
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Heart } from 'lucide-react';
+import { Heart, Plus, Check, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useCartStore } from '../../store/cartStore';
 import { wishlistAPI } from '../../services/api';
 
 function ProductCard({ product, onWishlistChange }) {
   // Track local wishlist state (optimistic UI)
   const [isWishlisted, setIsWishlisted] = useState(product.isWishlisted || false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isWishlistLoading, setIsWishlistLoading] = useState(false);
   
-  // Get auth state to check if user is logged in
+  // Track add-to-cart state
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
+
+  // Get auth state and cart actions
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const addItem = useCartStore((state) => state.addItem);
   const navigate = useNavigate();
 
   /**
@@ -33,41 +38,66 @@ function ProductCard({ product, onWishlistChange }) {
    * - If logged in, add/remove from wishlist via API
    */
   const handleWishlistClick = async (e) => {
-    // Prevent the click from navigating to the product page
     e.preventDefault();
     e.stopPropagation();
 
-    // If not authenticated, redirect to login
     if (!isAuthenticated) {
       navigate('/login', { state: { from: { pathname: `/products/${product.slug}` } } });
       return;
     }
 
-    // Prevent double-clicks
-    if (isLoading) return;
+    if (isWishlistLoading) return;
 
-    setIsLoading(true);
+    setIsWishlistLoading(true);
 
     try {
       if (isWishlisted) {
-        // Remove from wishlist
         await wishlistAPI.remove(product.id);
         setIsWishlisted(false);
       } else {
-        // Add to wishlist
         await wishlistAPI.add(product.id);
         setIsWishlisted(true);
       }
 
-      // Notify parent component if callback provided
       if (onWishlistChange) {
         onWishlistChange(product.id, !isWishlisted);
       }
     } catch (error) {
       console.error('Wishlist toggle failed:', error);
-      // Could add toast notification here
     } finally {
-      setIsLoading(false);
+      setIsWishlistLoading(false);
+    }
+  };
+
+  /**
+   * Handle quick add-to-cart
+   * - Uses the first/default variant if available
+   * - Shows brief success state before resetting
+   */
+  const handleQuickAddToCart = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isAddingToCart) return;
+
+    setIsAddingToCart(true);
+
+    try {
+      // Get the default variant (first one) or use product ID if no variants
+      const variantId = product.variants?.[0]?.id || product.defaultVariantId || null;
+      
+      // Add to cart - the cartStore handles the API call
+      await addItem(product.id, variantId, 1);
+      
+      // Show success state briefly
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 1500);
+      
+    } catch (error) {
+      console.error('Quick add to cart failed:', error);
+      // Could show error toast here
+    } finally {
+      setIsAddingToCart(false);
     }
   };
 
@@ -89,7 +119,7 @@ function ProductCard({ product, onWishlistChange }) {
             </div>
           )}
 
-          {/* Badges */}
+          {/* Badges - top left */}
           <div className="absolute top-2 left-2 flex flex-col gap-1">
             {product.isNew && <span className="badge-new">New</span>}
             {product.compareAtPrice && <span className="badge-sale">Sale</span>}
@@ -104,7 +134,7 @@ function ProductCard({ product, onWishlistChange }) {
           <h3 className="font-medium text-street-900 truncate">{product.name}</h3>
           <div className="mt-1 flex items-center gap-2">
             <span className="text-ocean-950 font-semibold">
-              ${product.price.toFixed(2)}
+              ${product.price?.toFixed(2) || '0.00'}
             </span>
             {product.compareAtPrice && (
               <span className="text-street-400 text-sm line-through">
@@ -115,23 +145,55 @@ function ProductCard({ product, onWishlistChange }) {
         </div>
       </Link>
 
-      {/* Wishlist button - NOW FUNCTIONAL! */}
-      <button
-        onClick={handleWishlistClick}
-        disabled={isLoading}
-        className={`absolute top-2 right-2 p-2 bg-white/80 rounded-full transition-all hover:bg-white
-          ${isLoading ? 'opacity-50 cursor-wait' : 'opacity-0 group-hover:opacity-100'}
-          ${isWishlisted ? 'opacity-100' : ''}`}
-        aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-      >
-        <Heart 
-          className={`w-4 h-4 transition-colors ${
-            isWishlisted 
-              ? 'fill-blood-600 text-blood-600' 
-              : 'text-street-600 hover:text-blood-600'
-          }`} 
-        />
-      </button>
+      {/* Action buttons container - top right */}
+      <div className="absolute top-2 right-2 flex flex-col gap-2">
+        {/* Wishlist button (heart) */}
+        <button
+          onClick={handleWishlistClick}
+          disabled={isWishlistLoading}
+          className={`p-2 bg-white/90 rounded-full shadow-sm transition-all hover:bg-white hover:shadow-md
+            ${isWishlistLoading ? 'opacity-50 cursor-wait' : 'opacity-0 group-hover:opacity-100'}
+            ${isWishlisted ? 'opacity-100' : ''}`}
+          aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+        >
+          <Heart
+            className={`w-4 h-4 transition-colors ${
+              isWishlisted
+                ? 'fill-blood-600 text-blood-600'
+                : 'text-street-600 hover:text-blood-600'
+            }`}
+          />
+        </button>
+
+        {/* Quick add-to-cart button (+) */}
+        <button
+          onClick={handleQuickAddToCart}
+          disabled={isAddingToCart || product.isOutOfStock}
+          className={`p-2 bg-white/90 rounded-full shadow-sm transition-all hover:bg-white hover:shadow-md
+            ${isAddingToCart ? 'opacity-100 cursor-wait' : 'opacity-0 group-hover:opacity-100'}
+            ${justAdded ? 'opacity-100 bg-green-500 hover:bg-green-500' : ''}
+            ${product.isOutOfStock ? 'opacity-50 cursor-not-allowed' : ''}`}
+          aria-label={justAdded ? 'Added to cart' : 'Quick add to cart'}
+          title={product.isOutOfStock ? 'Out of stock' : 'Quick add to cart'}
+        >
+          {isAddingToCart ? (
+            <Loader2 className="w-4 h-4 text-street-600 animate-spin" />
+          ) : justAdded ? (
+            <Check className="w-4 h-4 text-white" />
+          ) : (
+            <Plus className="w-4 h-4 text-street-600 hover:text-ocean-950" />
+          )}
+        </button>
+      </div>
+
+      {/* Out of stock overlay */}
+      {product.isOutOfStock && (
+        <div className="absolute inset-0 bg-white/60 flex items-center justify-center pointer-events-none">
+          <span className="bg-street-900 text-white px-3 py-1 text-sm font-medium tracking-wider">
+            SOLD OUT
+          </span>
+        </div>
+      )}
     </div>
   );
 }
