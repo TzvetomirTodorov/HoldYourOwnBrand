@@ -1,11 +1,12 @@
 /**
- * Cart Routes - Fixed Version v2
+ * Cart Routes - Fixed Version v3
  * 
  * FIXES:
  * 1. Removed is_active column checks (may not exist in all schemas)
  * 2. More defensive column handling
  * 3. Better error messages for debugging
  * 4. Session ID properly handled
+ * 5. AUTO-SELECTS DEFAULT VARIANT when variantId is null (for quick add-to-cart)
  */
 
 const express = require('express');
@@ -189,18 +190,15 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
 /**
  * POST /api/cart/items
  * Add an item to the cart
+ * 
+ * FIXED: Now accepts productId and will auto-select default variant if variantId is null
  */
 router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
   const userId = req.user?.id || null;
   const sessionId = getSessionId(req);
-  const { variantId, quantity = 1 } = req.body;
+  let { productId, variantId, quantity = 1 } = req.body;
 
-  console.log('POST /api/cart/items - userId:', userId, 'sessionId:', sessionId, 'variantId:', variantId, 'quantity:', quantity);
-
-  // Validation
-  if (!variantId) {
-    throw new AppError('Variant ID is required', 400);
-  }
+  console.log('POST /api/cart/items - userId:', userId, 'sessionId:', sessionId, 'productId:', productId, 'variantId:', variantId, 'quantity:', quantity);
 
   if (!userId && !sessionId) {
     throw new AppError('Session ID is required for guest checkout', 400);
@@ -211,9 +209,35 @@ router.post('/items', optionalAuth, asyncHandler(async (req, res) => {
     throw new AppError('Quantity must be between 1 and 99', 400);
   }
 
+  // =========================================================================
+  // FIX: Auto-select default variant if variantId is null but productId exists
+  // =========================================================================
+  if (!variantId && productId) {
+    console.log('No variantId provided, auto-selecting default variant for product:', productId);
+    
+    const defaultVariantResult = await db.query(`
+      SELECT id FROM product_variants 
+      WHERE product_id = $1 
+      ORDER BY created_at ASC 
+      LIMIT 1
+    `, [productId]);
+    
+    if (defaultVariantResult.rows.length === 0) {
+      throw new AppError('No variants available for this product', 400);
+    }
+    
+    variantId = defaultVariantResult.rows[0].id;
+    console.log('Auto-selected default variant:', variantId);
+  }
+
+  // Validation - now we should have a variantId
+  if (!variantId) {
+    throw new AppError('Variant ID or Product ID is required', 400);
+  }
+
   // Check if variant exists and has stock (without is_active check)
   const variantCheck = await db.query(`
-    SELECT pv.id, pv.quantity as stock, p.name as product_name
+    SELECT pv.id, pv.quantity as stock, pv.product_id, p.name as product_name
     FROM product_variants pv
     JOIN products p ON pv.product_id = p.id
     WHERE pv.id = $1
