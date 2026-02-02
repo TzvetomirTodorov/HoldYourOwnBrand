@@ -33,23 +33,24 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     throw new AppError('User ID or session ID required', 400);
   }
 
-  // Get cart items - using products table directly (not product_variants)
+  // Get cart items
   let cartResult;
   if (userId) {
     cartResult = await db.query(`
       SELECT 
         ci.id,
         ci.quantity,
-        ci.size,
-        ci.color,
+        pv.id as variant_id,
+        pv.price as variant_price,
+        pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
-        p.price,
-        p.slug,
-        p.stock_quantity
+        p.price as base_price,
+        p.slug
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
-      JOIN products p ON ci.product_id = p.id
+      JOIN product_variants pv ON ci.variant_id = pv.id
+      JOIN products p ON pv.product_id = p.id
       WHERE c.user_id = $1
     `, [userId]);
   } else {
@@ -57,16 +58,17 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
       SELECT 
         ci.id,
         ci.quantity,
-        ci.size,
-        ci.color,
+        pv.id as variant_id,
+        pv.price as variant_price,
+        pv.quantity as stock_quantity,
         p.id as product_id,
         p.name as product_name,
-        p.price,
-        p.slug,
-        p.stock_quantity
+        p.price as base_price,
+        p.slug
       FROM cart_items ci
       JOIN carts c ON ci.cart_id = c.id
-      JOIN products p ON ci.product_id = p.id
+      JOIN product_variants pv ON ci.variant_id = pv.id
+      JOIN products p ON pv.product_id = p.id
       WHERE c.session_id = $1
     `, [sessionId]);
   }
@@ -80,21 +82,19 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
   const items = [];
 
   for (const item of cartResult.rows) {
-    // Check stock (basic check - you can enhance this per size/color later)
-    if (item.stock_quantity !== null && item.quantity > item.stock_quantity) {
+    // Check stock
+    if (item.quantity > item.stock_quantity) {
       throw new AppError(`Insufficient stock for ${item.product_name}. Only ${item.stock_quantity} available.`, 400);
     }
 
-    const unitPrice = parseFloat(item.price);
+    const unitPrice = parseFloat(item.variant_price) || parseFloat(item.base_price);
     const lineTotal = unitPrice * item.quantity;
     subtotal += lineTotal;
 
     items.push({
-      cartItemId: item.id,
+      variantId: item.variant_id,
       productId: item.product_id,
       productName: item.product_name,
-      size: item.size,
-      color: item.color,
       quantity: item.quantity,
       unitPrice,
       lineTotal
@@ -169,20 +169,16 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
     await db.query(`
       INSERT INTO order_items (
         order_id,
-        product_id,
+        variant_id,
         product_name,
-        size,
-        color,
         quantity,
         unit_price,
         total
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ) VALUES ($1, $2, $3, $4, $5, $6)
     `, [
       orderId,
-      item.productId,
+      item.variantId,
       item.productName,
-      item.size || null,
-      item.color || null,
       item.quantity,
       item.unitPrice,
       item.lineTotal
@@ -246,14 +242,14 @@ router.post('/confirm', optionalAuth, asyncHandler(async (req, res) => {
       }
     }
 
-    // Reduce inventory for each product
-    const orderItems = await db.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [orderResult.rows[0].id]);
-    for (const item of orderItems.rows) {
+    // Reduce inventory
+    const items = await db.query('SELECT variant_id, quantity FROM order_items WHERE order_id = $1', [orderResult.rows[0].id]);
+    for (const item of items.rows) {
       await db.query(`
-        UPDATE products 
-        SET stock_quantity = GREATEST(0, stock_quantity - $1)
-        WHERE id = $2 AND stock_quantity IS NOT NULL
-      `, [item.quantity, item.product_id]);
+        UPDATE product_variants 
+        SET quantity = quantity - $1 
+        WHERE id = $2
+      `, [item.quantity, item.variant_id]);
     }
 
     res.json({ 
