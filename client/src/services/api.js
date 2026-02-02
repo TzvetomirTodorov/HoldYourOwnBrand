@@ -1,8 +1,10 @@
 // HYOW E-commerce API Service
 // This service handles all communication with the backend API
 // 
-// FIX: Token storage now reads from Zustand's persist middleware location
-// The authStore saves tokens under "hyow-auth" in localStorage as a nested JSON object
+// FIXED: Auth interceptor now properly distinguishes between:
+// - Network errors (don't logout - could be temporary)
+// - CORS/blocked errors (don't logout - might be ad blocker)
+// - Actual 401 auth failures from our server (try refresh, then logout only if refresh also fails with 401)
 
 import axios from 'axios';
 
@@ -10,54 +12,59 @@ import axios from 'axios';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
- * Helper function to get auth data from Zustand's persisted storage
- * Zustand persist middleware stores state as: { state: { ...data }, version: 0 }
+ * Read auth tokens from Zustand's persist storage location
+ * Zustand persist middleware stores state at: localStorage['hyow-auth'].state
+ * 
+ * IMPORTANT: This must match the key used in authStore.js persist config
  */
 const getAuthFromStorage = () => {
   try {
     const stored = localStorage.getItem('hyow-auth');
     if (!stored) return { accessToken: null, refreshToken: null };
-    
+
     const parsed = JSON.parse(stored);
     return {
       accessToken: parsed?.state?.accessToken || null,
       refreshToken: parsed?.state?.refreshToken || null,
     };
-  } catch (error) {
-    console.error('Error reading auth from storage:', error);
+  } catch (e) {
+    console.error('Failed to read auth from storage:', e);
     return { accessToken: null, refreshToken: null };
   }
 };
 
 /**
- * Helper function to update tokens in Zustand's persisted storage
- * This keeps the storage in sync when tokens are refreshed
+ * Update tokens in Zustand's persist storage
+ * This keeps api.js and Zustand authStore in sync after token refresh
  */
 const updateTokensInStorage = (accessToken, refreshToken) => {
   try {
     const stored = localStorage.getItem('hyow-auth');
     if (!stored) return;
-    
+
     const parsed = JSON.parse(stored);
     if (parsed?.state) {
-      if (accessToken !== undefined) parsed.state.accessToken = accessToken;
-      if (refreshToken !== undefined) parsed.state.refreshToken = refreshToken;
+      parsed.state.accessToken = accessToken;
+      if (refreshToken) {
+        parsed.state.refreshToken = refreshToken;
+      }
       localStorage.setItem('hyow-auth', JSON.stringify(parsed));
     }
-  } catch (error) {
-    console.error('Error updating tokens in storage:', error);
+  } catch (e) {
+    console.error('Failed to update tokens in storage:', e);
   }
 };
 
 /**
- * Helper function to clear auth from Zustand's persisted storage
- * Sets authenticated state to false and clears tokens
+ * Clear auth state from Zustand's persist storage
+ * ONLY call this when we're CERTAIN the user's session is invalid
+ * (i.e., the refresh endpoint explicitly rejected us with 401/403)
  */
 const clearAuthStorage = () => {
   try {
     const stored = localStorage.getItem('hyow-auth');
     if (!stored) return;
-    
+
     const parsed = JSON.parse(stored);
     if (parsed?.state) {
       parsed.state.user = null;
@@ -66,8 +73,8 @@ const clearAuthStorage = () => {
       parsed.state.isAuthenticated = false;
       localStorage.setItem('hyow-auth', JSON.stringify(parsed));
     }
-  } catch (error) {
-    console.error('Error clearing auth storage:', error);
+  } catch (e) {
+    console.error('Failed to clear auth storage:', e);
   }
 };
 
@@ -81,7 +88,6 @@ const api = axios.create({
 });
 
 // Request interceptor - adds auth token to every request
-// FIX: Now reads from Zustand's persisted storage location
 api.interceptors.request.use(
   (config) => {
     const { accessToken } = getAuthFromStorage();
@@ -93,52 +99,183 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor - handles token refresh on 401 errors
-// FIX: Uses correct storage location and softer error handling
+// Track if we're currently refreshing to prevent multiple simultaneous refresh attempts
+let isRefreshing = false;
+let failedQueue = [];
+
+/**
+ * Process queued requests after token refresh completes
+ */
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+/**
+ * Response interceptor - handles token refresh on 401 errors
+ * 
+ * CRITICAL FIX: This interceptor now properly distinguishes between different error types:
+ * 
+ * 1. NO RESPONSE (network error, CORS, blocked by ad blocker):
+ *    - DO NOT treat as auth failure
+ *    - Just reject the promise so the calling code can handle it
+ *    - User stays logged in
+ * 
+ * 2. 401 from auth endpoints (/auth/login, /auth/refresh, etc.):
+ *    - Skip refresh attempt (would cause infinite loop)
+ *    - Just reject the promise
+ * 
+ * 3. 401 from other endpoints:
+ *    - Try to refresh the token
+ *    - If refresh succeeds: retry original request
+ *    - If refresh fails with 401/403: NOW we clear auth and redirect
+ *    - If refresh fails with network error: keep user logged in, just reject
+ */
 api.interceptors.response.use(
+  // Success handler - just pass through
   (response) => response,
+  
+  // Error handler
   async (error) => {
     const originalRequest = error.config;
 
-    // Only attempt refresh for 401 errors that haven't been retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const { refreshToken } = getAuthFromStorage();
-        
-        if (refreshToken) {
-          // Try to refresh the access token
-          const response = await axios.post(`${API_URL}/api/auth/refresh`, {
-            refreshToken,
-          });
-
-          const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.tokens || response.data;
-          
-          // Update tokens in Zustand's storage
-          updateTokensInStorage(newAccessToken, newRefreshToken || refreshToken);
-
-          // Retry the original request with new token
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-          return api(originalRequest);
-        }
-      } catch (refreshError) {
-        // Refresh failed - clear auth state but don't force redirect
-        // Let the ProtectedRoute component handle the redirect naturally
-        console.error('Token refresh failed:', refreshError);
-        clearAuthStorage();
-        
-        // Only redirect if we're not already on the login page
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login';
-        }
-        return Promise.reject(refreshError);
-      }
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 1: No response = Network error, CORS issue, or blocked request
+    // ═══════════════════════════════════════════════════════════════════
+    // This is NOT an auth problem - do NOT logout the user!
+    // Common causes:
+    // - Ad blocker blocking requests (ERR_BLOCKED_BY_CLIENT)
+    // - Network offline
+    // - CORS rejection
+    // - Server unreachable
+    if (!error.response) {
+      console.warn('Network error (not auth related):', error.message);
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 2: Non-401 error - just pass through
+    // ═══════════════════════════════════════════════════════════════════
+    const isAuthError = error.response.status === 401;
+    if (!isAuthError) {
+      return Promise.reject(error);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 3: 401 from auth endpoints - skip refresh to prevent loops
+    // ═══════════════════════════════════════════════════════════════════
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/');
+    if (isAuthEndpoint) {
+      return Promise.reject(error);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 4: Already retried this request - don't retry again
+    // ═══════════════════════════════════════════════════════════════════
+    if (originalRequest._retry) {
+      return Promise.reject(error);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 5: Another refresh is in progress - queue this request
+    // ═══════════════════════════════════════════════════════════════════
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        })
+        .catch((err) => Promise.reject(err));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CASE 6: Attempt token refresh
+    // ═══════════════════════════════════════════════════════════════════
+    originalRequest._retry = true;
+    isRefreshing = true;
+
+    const { refreshToken } = getAuthFromStorage();
+
+    // No refresh token available - can't refresh, but DON'T force logout
+    // The user might just be browsing without being logged in
+    if (!refreshToken) {
+      isRefreshing = false;
+      processQueue(error, null);
+      return Promise.reject(error);
+    }
+
+    try {
+      // Attempt to refresh the token
+      const response = await axios.post(`${API_URL}/api/auth/refresh`, {
+        refreshToken,
+      });
+
+      // Extract new tokens (handle both response formats)
+      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = 
+        response.data.tokens || response.data;
+
+      // Update tokens in storage
+      updateTokensInStorage(newAccessToken, newRefreshToken);
+
+      // Update the failed request's auth header
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+
+      // Process any queued requests with the new token
+      processQueue(null, newAccessToken);
+
+      // Retry the original request
+      return api(originalRequest);
+      
+    } catch (refreshError) {
+      // Refresh failed
+      processQueue(refreshError, null);
+
+      // ═══════════════════════════════════════════════════════════════
+      // CRITICAL: Only clear auth if refresh endpoint EXPLICITLY rejected us
+      // ═══════════════════════════════════════════════════════════════
+      // If refreshError has no response, it's a network error during refresh
+      // - Don't logout (might just be temporary network issue)
+      // 
+      // If refreshError.response.status is 401 or 403, the server explicitly
+      // said "this refresh token is invalid" - NOW we can logout
+      const serverExplicitlyRejected = 
+        refreshError.response && 
+        (refreshError.response.status === 401 || refreshError.response.status === 403);
+
+      if (serverExplicitlyRejected) {
+        console.log('Session expired - clearing auth and redirecting to login');
+        clearAuthStorage();
+
+        // Only redirect if we're not already on the login page
+        if (!window.location.pathname.includes('/login')) {
+          // Small delay to allow state to update before redirect
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 100);
+        }
+      } else {
+        // Network error during refresh - keep user logged in
+        console.warn('Token refresh failed due to network error, keeping session');
+      }
+
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
 
 // AUTH API
 export const authAPI = {
