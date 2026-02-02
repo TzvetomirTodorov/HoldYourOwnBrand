@@ -9,6 +9,8 @@
  * - Auth routes for login/register
  * - Protected routes for user account
  * - Admin routes for store management
+ * 
+ * FIXED: Added OrderConfirmationPage route for post-checkout Stripe redirect
  */
 
 import { Routes, Route } from 'react-router-dom';
@@ -23,6 +25,7 @@ import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
+import OrderConfirmationPage from './pages/OrderConfirmationPage';  // ADDED
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AccountPage from './pages/AccountPage';
@@ -57,6 +60,9 @@ function App() {
         {/* Shopping */}
         <Route path="cart" element={<CartPage />} />
         <Route path="checkout" element={<CheckoutPage />} />
+        
+        {/* Order confirmation - Stripe redirects here after payment */}
+        <Route path="order-confirmation" element={<OrderConfirmationPage />} />
         
         {/* Authentication */}
         <Route path="login" element={<LoginPage />} />
