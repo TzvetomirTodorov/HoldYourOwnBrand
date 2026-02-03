@@ -1,8 +1,12 @@
 /**
- * Header Component - FIXED VERSION
- * 
+ * Header Component - FIXED VERSION v2
+ *
  * Main navigation header for the storefront.
- * 
+ *
+ * FIXES APPLIED:
+ * 1. Added useEffect to call fetchCart() on component mount
+ * 2. This ensures the cart badge always shows accurate count from server
+ *
  * BEHAVIOR:
  * - When NOT logged in: Shows "Sign In" link that goes to /login
  * - When logged in: Shows user icon with dropdown menu containing:
@@ -23,13 +27,26 @@ function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  
+
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuthStore();
-  const { items } = useCartStore();
   
-  // Calculate cart item count
+  // Subscribe to cart store - items will update reactively when cart changes
+  const items = useCartStore((state) => state.items);
+  const fetchCart = useCartStore((state) => state.fetchCart);
+
+  // Calculate cart item count from current items
   const cartItemCount = (items || []).reduce((sum, item) => sum + (item.quantity || 1), 0);
+
+  // FIXED: Fetch cart from server on component mount to ensure badge is accurate
+  useEffect(() => {
+    fetchCart();
+  }, [fetchCart]);
+
+  // Also refetch cart when auth state changes (login/logout)
+  useEffect(() => {
+    fetchCart();
+  }, [isAuthenticated, fetchCart]);
 
   // Debug: Log auth state (remove in production)
   useEffect(() => {
@@ -90,8 +107,8 @@ function Header() {
                 to={link.path}
                 className={({ isActive }) =>
                   `text-xs tracking-wider transition-colors ${
-                    isActive 
-                      ? 'text-ocean-950 font-semibold' 
+                    isActive
+                      ? 'text-ocean-950 font-semibold'
                       : 'text-street-600 hover:text-ocean-950'
                   }`
                 }
@@ -104,7 +121,7 @@ function Header() {
           {/* Desktop Actions */}
           <div className="hidden lg:flex items-center gap-4">
             {/* Search */}
-            <button 
+            <button
               className="p-2 text-street-600 hover:text-ocean-950 transition-colors"
               aria-label="Search"
             >
@@ -123,7 +140,7 @@ function Header() {
                   <User className="w-5 h-5" />
                   <ChevronDown className={`w-3 h-3 transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
-                
+
                 {/* Profile Dropdown */}
                 {isProfileMenuOpen && (
                   <div className="absolute right-0 mt-2 w-56 bg-white border border-street-200 rounded-lg shadow-lg py-2 z-50">
@@ -136,7 +153,7 @@ function Header() {
                         {user?.email}
                       </p>
                     </div>
-                    
+
                     {/* Menu Links */}
                     <div className="py-1">
                       <Link
@@ -164,7 +181,7 @@ function Header() {
                         Wishlist
                       </Link>
                     </div>
-                    
+
                     {/* Sign Out */}
                     <div className="border-t border-street-100 pt-1">
                       <button
@@ -274,8 +291,8 @@ function Header() {
                 onClick={() => setIsMenuOpen(false)}
                 className={({ isActive }) =>
                   `block py-3 text-sm tracking-wider transition-colors ${
-                    isActive 
-                      ? 'text-ocean-950 font-semibold' 
+                    isActive
+                      ? 'text-ocean-950 font-semibold'
                       : 'text-street-600 hover:text-ocean-950'
                   }`
                 }
@@ -283,7 +300,7 @@ function Header() {
                 {link.name}
               </NavLink>
             ))}
-            
+
             {/* Mobile Account Section */}
             <div className="border-t border-street-200 mt-4 pt-4">
               {isAuthenticated ? (
