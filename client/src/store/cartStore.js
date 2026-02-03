@@ -90,7 +90,7 @@ export const useCartStore = create(
        * @param {string} variantId - The product variant ID
        * @param {number} quantity - Quantity to add
        */
-      addItem: async (variantId, quantity = 1) => {
+      addItem: async (variantId, quantity = 1, productId = null) => {
         set({ isLoading: true, error: null });
         
         try {
@@ -111,6 +111,7 @@ export const useCartStore = create(
             credentials: 'include',
             body: JSON.stringify({
               variantId,
+              productId,
               quantity,
               sessionId: token ? undefined : sessionId,  // Only send sessionId if not logged in
             }),
