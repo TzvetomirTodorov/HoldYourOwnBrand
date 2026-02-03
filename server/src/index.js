@@ -55,16 +55,25 @@ const corsOptions = {
     if (!origin) {
       return callback(null, true);
     }
-    
+
     // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
+
+    // Allow Vercel preview deployments (dynamic URLs)
+    // Pattern: https://holdyourownbrand-*-tzvetomirtodorovs-projects.vercel.app
+    // or: https://client-*-tzvetomirtodorovs-projects.vercel.app
+    const vercelPreviewPattern = /^https:\/\/(holdyourownbrand|client)-[a-z0-9]+-tzvetomirtodorovs-projects\.vercel\.app$/;
+    if (vercelPreviewPattern.test(origin)) {
+      console.log('✅ CORS allowed Vercel preview:', origin);
+      return callback(null, true);
+    }
+
     // Log rejected origins for debugging
     console.warn('⚠️ CORS rejected origin:', origin);
     console.warn('   Allowed origins:', allowedOrigins);
-    
+
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
