@@ -65,70 +65,38 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
 
   // Get cart items - joining through product_variants to products
   // Price comes from products table (p.price)
+  // Get cart items - joining through product_variants to products
+  // Price comes from products table (p.price)
+  // FIX: Check both userId AND sessionId to handle guest carts after login
   let cartResult;
-  if (userId) {
-    cartResult = await db.query(`
-      SELECT 
-        ci.id,
-        ci.quantity,
-        pv.id as variant_id,
-        pv.size,
-        pv.color,
-        pv.sku,
-        pv.quantity as stock_quantity,
-        p.id as product_id,
-        p.name as product_name,
-        p.price,
-        p.slug,
-        p.image_url
-      FROM cart_items ci
-      JOIN carts c ON ci.cart_id = c.id
-      JOIN product_variants pv ON ci.variant_id = pv.id
-      JOIN products p ON pv.product_id = p.id
-      WHERE c.user_id = $1
-    `, [userId]);
-  } else {
-    cartResult = await db.query(`
-      SELECT 
-        ci.id,
-        ci.quantity,
-        pv.id as variant_id,
-        pv.size,
-        pv.color,
-        pv.sku,
-        pv.quantity as stock_quantity,
-        p.id as product_id,
-        p.name as product_name,
-        p.price,
-        p.slug,
-        p.image_url
-      FROM cart_items ci
-      JOIN carts c ON ci.cart_id = c.id
-      JOIN product_variants pv ON ci.variant_id = pv.id
-      JOIN products p ON pv.product_id = p.id
-      WHERE c.session_id = $1
-    `, [sessionId]);
-  }
+  
+  // Build the WHERE clause to check both user_id and session_id
+  const cartQuery = `
+    SELECT
+      ci.id,
+      ci.quantity,
+      pv.id as variant_id,
+      pv.size,
+      pv.color,
+      pv.sku,
+      pv.quantity as stock_quantity,
+      p.id as product_id,
+      p.name as product_name,
+      p.price,
+      p.slug,
+      p.image_url
+    FROM cart_items ci
+    JOIN carts c ON ci.cart_id = c.id
+    JOIN product_variants pv ON ci.variant_id = pv.id
+    JOIN products p ON pv.product_id = p.id
+    WHERE (c.user_id = $1 OR c.session_id = $2)
+  `;
+  
+  cartResult = await db.query(cartQuery, [userId || null, sessionId || null]);
 
   if (cartResult.rows.length === 0) {
     throw new AppError('Cart is empty', 400);
   }
-
-  // Calculate totals and validate inventory
-  let subtotal = 0;
-  const items = [];
-
-  for (const item of cartResult.rows) {
-    // Check stock
-    if (item.stock_quantity !== null && item.quantity > item.stock_quantity) {
-      throw new AppError(`Insufficient stock for ${item.product_name}. Only ${item.stock_quantity} available.`, 400);
-    }
-
-    // Price comes from products table
-    const unitPrice = parseFloat(item.price);
-    const lineTotal = unitPrice * item.quantity;
-    subtotal += lineTotal;
-
     // Build variant name from size/color
     const variantParts = [];
     if (item.size) variantParts.push(item.size);
