@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 import axios from 'axios';
 
 // ============================================================================
@@ -13,6 +14,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { login, register: authRegister } = useAuthStore();
   
   // Determine initial view based on URL params
   const getInitialView = () => {
@@ -99,42 +101,27 @@ export default function LoginPage() {
   // FORM HANDLERS
   // ========================================================================
   
-  // Login handler
+  // Login handler - FIXED: Now uses authStore
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setMessage({ type: '', text: '' });
 
     try {
-      const response = await axios.post(`${API_URL}/api/auth/login`, {
-        email: loginForm.email,
-        password: loginForm.password,
-      });
-
-      // Store token and user data
-      const { token, user } = response.data;
-      if (loginForm.rememberMe) {
-        localStorage.setItem('authToken', token);
-        localStorage.setItem('user', JSON.stringify(user));
-      } else {
-        sessionStorage.setItem('authToken', token);
-        sessionStorage.setItem('user', JSON.stringify(user));
-      }
-
-      setMessage({ type: 'success', text: 'Login successful! Redirecting...' });
+      const result = await login(loginForm.email, loginForm.password);
       
-      // Redirect after short delay
-      setTimeout(() => {
-        navigate('/');
-      }, 1500);
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Login successful! Redirecting...' });
+        setTimeout(() => navigate('/'), 1500);
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Login failed. Please check your credentials.' });
+      }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Login failed. Please check your credentials.';
-      setMessage({ type: 'error', text: errorMessage });
+      setMessage({ type: 'error', text: 'An unexpected error occurred' });
     } finally {
       setIsLoading(false);
     }
   };
-
   // Registration handler
   const handleRegister = async (e) => {
     e.preventDefault();
