@@ -27,7 +27,7 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
     search,
     sort = 'newest',
     page = 1,
-    limit = 12,
+    limit = 50,
     featured
   } = req.query;
 
