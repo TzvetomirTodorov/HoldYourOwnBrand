@@ -1,16 +1,21 @@
 /**
- * Header Component
+ * Header Component - FIXED VERSION
  * 
  * Main navigation header for the storefront.
- * - Shows logo and main navigation links
- * - Profile icon: links to /account when logged in, /login when not
- * - Cart icon with item count badge
- * - Responsive mobile menu
+ * 
+ * BEHAVIOR:
+ * - When NOT logged in: Shows "Sign In" link that goes to /login
+ * - When logged in: Shows user icon with dropdown menu containing:
+ *   - User's name/email
+ *   - My Account link
+ *   - Order History link
+ *   - Wishlist link
+ *   - Sign Out button (clearly labeled)
  */
 
 import { useState, useEffect } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Search, User, ShoppingBag, Menu, X, Heart, LogOut } from 'lucide-react';
+import { Search, User, ShoppingBag, Menu, X, Heart, LogOut, ChevronDown } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
 
@@ -25,6 +30,11 @@ function Header() {
   
   // Calculate cart item count
   const cartItemCount = (items || []).reduce((sum, item) => sum + (item.quantity || 1), 0);
+
+  // Debug: Log auth state (remove in production)
+  useEffect(() => {
+    console.log('Header auth state:', { isAuthenticated, user: user?.email });
+  }, [isAuthenticated, user]);
 
   // Handle scroll effect
   useEffect(() => {
@@ -46,9 +56,9 @@ function Header() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [isProfileMenuOpen]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     setIsProfileMenuOpen(false);
+    await logout();
     navigate('/');
   };
 
@@ -101,72 +111,85 @@ function Header() {
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Profile / Account */}
-            <div className="relative profile-menu-container">
-              {isAuthenticated ? (
-                <>
-                  <button
-                    onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                    className="p-2 text-street-600 hover:text-ocean-950 transition-colors"
-                    aria-label="Account menu"
-                  >
-                    <User className="w-5 h-5" />
-                  </button>
-                  
-                  {/* Profile Dropdown */}
-                  {isProfileMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white border border-street-200 rounded-lg shadow-lg py-2 z-50">
-                      <div className="px-4 py-2 border-b border-street-100">
-                        <p className="text-sm font-medium text-ocean-950">
-                          {user?.firstName || 'Welcome'}
-                        </p>
-                        <p className="text-xs text-street-500 truncate">
-                          {user?.email}
-                        </p>
-                      </div>
+            {/* Profile / Account - Different behavior based on auth state */}
+            {isAuthenticated ? (
+              /* LOGGED IN: Show dropdown menu */
+              <div className="relative profile-menu-container">
+                <button
+                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  className="flex items-center gap-1 p-2 text-street-600 hover:text-ocean-950 transition-colors"
+                  aria-label="Account menu"
+                >
+                  <User className="w-5 h-5" />
+                  <ChevronDown className={`w-3 h-3 transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {/* Profile Dropdown */}
+                {isProfileMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-street-200 rounded-lg shadow-lg py-2 z-50">
+                    {/* User Info */}
+                    <div className="px-4 py-3 border-b border-street-100">
+                      <p className="text-sm font-medium text-ocean-950">
+                        {user?.firstName ? `${user.firstName} ${user.lastName || ''}` : 'Welcome!'}
+                      </p>
+                      <p className="text-xs text-street-500 truncate">
+                        {user?.email}
+                      </p>
+                    </div>
+                    
+                    {/* Menu Links */}
+                    <div className="py-1">
                       <Link
                         to="/account"
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-street-700 hover:bg-street-50"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-street-700 hover:bg-street-50 transition-colors"
                       >
+                        <User className="w-4 h-4" />
                         My Account
                       </Link>
                       <Link
                         to="/orders"
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-street-700 hover:bg-street-50"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-street-700 hover:bg-street-50 transition-colors"
                       >
+                        <ShoppingBag className="w-4 h-4" />
                         Order History
                       </Link>
                       <Link
                         to="/wishlist"
                         onClick={() => setIsProfileMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-street-700 hover:bg-street-50"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-street-700 hover:bg-street-50 transition-colors"
                       >
+                        <Heart className="w-4 h-4" />
                         Wishlist
                       </Link>
+                    </div>
+                    
+                    {/* Sign Out */}
+                    <div className="border-t border-street-100 pt-1">
                       <button
                         onClick={handleLogout}
-                        className="w-full text-left px-4 py-2 text-sm text-blood-600 hover:bg-street-50 flex items-center gap-2"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-blood-600 hover:bg-blood-50 transition-colors"
                       >
                         <LogOut className="w-4 h-4" />
                         Sign Out
                       </button>
                     </div>
-                  )}
-                </>
-              ) : (
-                <Link
-                  to="/login"
-                  className="p-2 text-street-600 hover:text-ocean-950 transition-colors"
-                  aria-label="Sign in"
-                >
-                  <User className="w-5 h-5" />
-                </Link>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* NOT LOGGED IN: Show Sign In link */
+              <Link
+                to="/login"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-street-600 hover:text-ocean-950 transition-colors"
+              >
+                <User className="w-5 h-5" />
+                <span className="hidden xl:inline">Sign In</span>
+              </Link>
+            )}
 
-            {/* Wishlist (when logged in) */}
+            {/* Wishlist (only when logged in) */}
             {isAuthenticated && (
               <Link
                 to="/wishlist"
@@ -194,7 +217,7 @@ function Header() {
 
           {/* Mobile Actions */}
           <div className="flex lg:hidden items-center gap-2">
-            {/* Profile */}
+            {/* Profile - Mobile */}
             {isAuthenticated ? (
               <Link
                 to="/account"
@@ -213,7 +236,7 @@ function Header() {
               </Link>
             )}
 
-            {/* Cart */}
+            {/* Cart - Mobile */}
             <Link
               to="/cart"
               className="p-2 text-street-600 hover:text-ocean-950 transition-colors relative"
@@ -243,6 +266,7 @@ function Header() {
       {isMenuOpen && (
         <div className="lg:hidden border-t border-street-200 bg-white">
           <nav className="container-custom py-4">
+            {/* Navigation Links */}
             {navLinks.map((link) => (
               <NavLink
                 key={link.path}
@@ -260,10 +284,14 @@ function Header() {
               </NavLink>
             ))}
             
-            {/* Mobile Account Links */}
-            <div className="border-t border-street-200 mt-4 pt-4 space-y-3">
+            {/* Mobile Account Section */}
+            <div className="border-t border-street-200 mt-4 pt-4">
               {isAuthenticated ? (
-                <>
+                /* LOGGED IN: Show account links and sign out */
+                <div className="space-y-1">
+                  <p className="text-xs text-street-500 uppercase tracking-wider mb-2">
+                    Account
+                  </p>
                   <Link
                     to="/account"
                     onClick={() => setIsMenuOpen(false)}
@@ -290,28 +318,29 @@ function Header() {
                       handleLogout();
                       setIsMenuOpen(false);
                     }}
-                    className="block py-2 text-sm text-blood-600"
+                    className="block w-full text-left py-2 text-sm text-blood-600 font-medium"
                   >
                     Sign Out
                   </button>
-                </>
+                </div>
               ) : (
-                <>
+                /* NOT LOGGED IN: Show sign in / register */
+                <div className="space-y-3">
                   <Link
                     to="/login"
                     onClick={() => setIsMenuOpen(false)}
-                    className="block py-2 text-sm text-street-600 hover:text-ocean-950"
+                    className="block w-full py-3 text-center bg-ocean-950 text-white text-sm font-medium rounded hover:bg-ocean-900 transition-colors"
                   >
                     Sign In
                   </Link>
                   <Link
                     to="/register"
                     onClick={() => setIsMenuOpen(false)}
-                    className="block py-2 text-sm text-street-600 hover:text-ocean-950"
+                    className="block w-full py-3 text-center border border-ocean-950 text-ocean-950 text-sm font-medium rounded hover:bg-ocean-50 transition-colors"
                   >
                     Create Account
                   </Link>
-                </>
+                </div>
               )}
             </div>
           </nav>
