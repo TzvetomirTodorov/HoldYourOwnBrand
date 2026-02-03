@@ -97,7 +97,7 @@ function ProductCard({ product, onWishlistChange }) {
       }
 
       // Add to cart
-      await addItem(variantId, 1);
+      await addItem(variantId, 1, product.id);
       
       // Show success state
       setJustAdded(true);
