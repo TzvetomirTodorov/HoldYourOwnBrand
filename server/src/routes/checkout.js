@@ -53,6 +53,7 @@ router.post('/create-payment-intent', optionalAuth, asyncHandler(async (req, res
   const userId = req.user?.id;
   const sessionId = req.body.sessionId || req.query.sessionId;
 
+  console.log('POST /checkout/create-payment-intent - userId:', userId, 'sessionId:', sessionId);
   if (!userId && !sessionId) {
     throw new AppError('User ID or session ID required', 400);
   }
