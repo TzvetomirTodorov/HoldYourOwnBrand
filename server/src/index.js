@@ -28,7 +28,7 @@ app.set('trust proxy', 1);
 // =============================================================================
 // CORS CONFIGURATION - CRITICAL FOR FRONTEND CONNECTION
 // =============================================================================
-// 
+//
 // This configuration allows the Vercel-hosted frontend to communicate with
 // the Railway-hosted backend. The CLIENT_URL environment variable must be
 // set in Railway to the exact origin of the frontend (no trailing slash).
@@ -39,10 +39,10 @@ const allowedOrigins = [
   // Production domains (after custom domain setup)
   'https://holdyourownbrand.com',
   'https://www.holdyourownbrand.com',
-  
+
   // Current Vercel deployment (keep until DNS propagates)
   'https://client-phi-tawny.vercel.app',
-  
+
   // Local development
   'http://localhost:5173',
   'http://localhost:3000',
@@ -62,8 +62,8 @@ const corsOptions = {
     }
 
     // Allow Vercel preview deployments (dynamic URLs)
-    // Pattern: https://holdyourownbrand-*-tzvetomirtodorovs-projects.vercel.app
-    // or: https://client-*-tzvetomirtodorovs-projects.vercel.app
+    // Pattern matches: https://holdyourownbrand-XXXX-tzvetomirtodorovs-projects.vercel.app
+    // or: https://client-XXXX-tzvetomirtodorovs-projects.vercel.app
     const vercelPreviewPattern = /^https:\/\/(holdyourownbrand|client)-[a-z0-9]+-tzvetomirtodorovs-projects\.vercel\.app$/;
     if (vercelPreviewPattern.test(origin)) {
       console.log('✅ CORS allowed Vercel preview:', origin);
@@ -89,81 +89,48 @@ const corsOptions = {
   maxAge: 86400,
 };
 
-// Apply CORS middleware BEFORE other middleware
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests explicitly for all routes
+// Handle preflight requests explicitly
 app.options('*', cors(corsOptions));
 
-// =============================================================================
-// SECURITY & PARSING MIDDLEWARE
-// =============================================================================
-
-// Security headers (but allow CORS to override where needed)
+// Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  contentSecurityPolicy: false, // Disable CSP for API
 }));
 
-// Parse JSON bodies (except for webhooks which need raw body)
-app.use((req, res, next) => {
-  if (req.originalUrl === '/api/webhooks/stripe') {
-    next();
-  } else {
-    express.json({ limit: '10mb' })(req, res, next);
-  }
-});
-
-// Parse URL-encoded bodies
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// =============================================================================
-// RATE LIMITING
-// =============================================================================
-
+// Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,     // 15 minutes
-  max: 100,                     // limit each IP to 100 requests per window
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests', message: 'Please try again later' },
 });
 
-// Apply rate limiting to API routes only (not webhooks)
-app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/webhooks')) {
+// Apply rate limiter to all requests except webhooks
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/webhooks')) {
     return next();
   }
   limiter(req, res, next);
 });
 
-// =============================================================================
-// DATABASE CONNECTION
-// =============================================================================
+// Body parsing middleware
+// IMPORTANT: Webhooks need raw body for signature verification
+app.use('/api/webhooks', express.raw({ type: 'application/json' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
-
-// Make pool available to routes
-app.locals.pool = pool;
-
-// =============================================================================
-// HEALTH CHECK ENDPOINT
-// =============================================================================
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    cors: {
-      clientUrl: process.env.CLIENT_URL || 'NOT SET',
-      allowedOrigins: allowedOrigins,
-    },
+// Request logging in development
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path}`);
+    next();
   });
-});
+}
 
 // =============================================================================
 // API ROUTES
@@ -179,55 +146,78 @@ app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'HYOW E-Commerce API',
+    version: '1.0.0',
+    documentation: '/api/health',
+  });
+});
+
 // =============================================================================
 // ERROR HANDLING
 // =============================================================================
 
-// 404 handler for unknown routes
-app.use((req, res) => {
+// 404 handler
+app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
-    message: `The requested resource ${req.path} does not exist`,
+    message: `Cannot ${req.method} ${req.path}`,
   });
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('❌ Server error:', err);
-  
+
   // Handle CORS errors specifically
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({
       error: 'CORS Error',
       message: 'Origin not allowed',
-      allowedOrigins: allowedOrigins,
     });
   }
-  
-  res.status(err.status || 500).json({
-    error: err.name || 'Internal Server Error',
-    message: process.env.NODE_ENV === 'production' 
-      ? 'An unexpected error occurred' 
+
+  // Handle known operational errors
+  if (err.isOperational) {
+    return res.status(err.statusCode || 400).json({
+      error: err.message,
+    });
+  }
+
+  // Handle unknown errors
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'production'
+      ? 'Something went wrong'
       : err.message,
   });
 });
 
 // =============================================================================
-// START SERVER
+// SERVER STARTUP
 // =============================================================================
 
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-  console.log('');
-  console.log('══════════════════════════════════════════════════════════════');
-  console.log('  🏪 HYOW E-Commerce Backend');
+  console.log('\n══════════════════════════════════════════════════════════════');
+  console.log('  🛍️ HYOW E-Commerce Backend');
   console.log('══════════════════════════════════════════════════════════════');
   console.log(`  ✅ Server running on port ${PORT}`);
   console.log(`  🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`  🔗 Client URL: ${process.env.CLIENT_URL || 'NOT SET'}`);
-  console.log('══════════════════════════════════════════════════════════════');
-  console.log('');
+  console.log(`  🔗 Client URL: ${process.env.CLIENT_URL || 'Not set'}`);
+  console.log('══════════════════════════════════════════════════════════════\n');
 });
 
 module.exports = app;
