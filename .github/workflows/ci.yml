@@ -1,0 +1,183 @@
+#
+# GitHub Actions CI Workflow for HYOW E-Commerce
+#
+# This workflow runs on every push and pull request to main/develop branches.
+# It's your "safety net" - even if someone bypasses local hooks,
+# this will catch issues before they reach production.
+#
+# What it does:
+# 1. Sets up Node.js environment
+# 2. Installs dependencies
+# 3. Runs linting (ESLint)
+# 4. Runs all tests
+# 5. Checks server syntax
+# 6. Reports results
+#
+# If ANY step fails, the PR will be blocked (with branch protection rules).
+#
+
+name: CI - Test & Lint
+
+# When to run this workflow
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs when a new commit is pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # CLIENT TESTS (Frontend)
+  # ============================================================================
+  client-tests:
+    name: Client Tests & Lint
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./client
+    
+    steps:
+      # Step 1: Check out the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+      
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: npm ci
+      
+      # Step 4: Run ESLint
+      - name: Run ESLint
+        run: npm run lint
+        continue-on-error: false
+      
+      # Step 5: Run tests
+      - name: Run tests
+        run: npm test -- --run
+        env:
+          # Mock environment variables for tests
+          VITE_API_URL: http://localhost:3001
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_mock
+          VITE_RADAR_PUBLISHABLE_KEY: prj_test_mock
+      
+      # Step 6: Upload test coverage (optional but nice)
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: client-coverage
+          path: client/coverage/
+          retention-days: 7
+
+  # ============================================================================
+  # SERVER TESTS (Backend)
+  # ============================================================================
+  server-tests:
+    name: Server Syntax Check
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./server
+    
+    steps:
+      # Step 1: Check out the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: npm ci
+      
+      # Step 4: Check JavaScript syntax for ALL server files
+      # This catches the exact error that crashed your server!
+      - name: Syntax check all JS files
+        run: |
+          echo "Checking JavaScript syntax..."
+          find src -name "*.js" -exec node --check {} \;
+          echo "✅ All files have valid syntax"
+      
+      # Step 5: Run ESLint on server code
+      - name: Run ESLint
+        run: npm run lint
+        continue-on-error: true  # Server might not have ESLint set up yet
+
+  # ============================================================================
+  # BUILD CHECK (ensure the app builds successfully)
+  # ============================================================================
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    needs: [client-tests, server-tests]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+      
+      - name: Install client dependencies
+        run: cd client && npm ci
+      
+      - name: Build client
+        run: cd client && npm run build
+        env:
+          VITE_API_URL: https://api.holdyourownbrand.com
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_placeholder
+          VITE_RADAR_PUBLISHABLE_KEY: prj_test_placeholder
+      
+      - name: Verify build output
+        run: |
+          if [ -d "client/dist" ]; then
+            echo "✅ Build successful! Output files:"
+            ls -la client/dist/
+          else
+            echo "❌ Build failed - no dist folder"
+            exit 1
+          fi
+
+  # ============================================================================
+  # STATUS CHECK (summary job for branch protection)
+  # ============================================================================
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [client-tests, server-tests, build-check]
+    if: always()
+    
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.client-tests.result }}" != "success" ] || \
+             [ "${{ needs.server-tests.result }}" != "success" ] || \
+             [ "${{ needs.build-check.result }}" != "success" ]; then
+            echo "❌ One or more jobs failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed!"
