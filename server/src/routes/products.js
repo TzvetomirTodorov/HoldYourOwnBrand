@@ -1,13 +1,10 @@
 /**
- * HYOW Backend Fix - Products Route
+ * HYOW Backend - Products Route (Fixed Category Matching)
  * 
- * This is the corrected products.js file that reads image_url directly 
- * from the products table instead of the product_images table.
- * 
- * DEPLOYMENT INSTRUCTIONS:
- * 1. Copy this file to: server/src/routes/products.js
- * 2. Git commit and push
- * 3. Railway will auto-redeploy
+ * FIXES:
+ * - Flexible category matching (handles t-shirts, tshirts, T-Shirts, etc.)
+ * - Case-insensitive category search
+ * - Matches both slug and name variations
  */
 
 const express = require('express');
@@ -38,10 +35,20 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
   const params = [];
   let paramIndex = 1;
 
+  // FIXED: Flexible category matching
   if (category) {
-    conditions.push(`c.slug = $${paramIndex}`);
-    params.push(category);
-    paramIndex++;
+    // Normalize the category for matching (remove hyphens, lowercase)
+    const normalizedCategory = category.toLowerCase().replace(/-/g, '');
+    conditions.push(`(
+      LOWER(c.slug) = $${paramIndex} OR 
+      LOWER(REPLACE(c.slug, '-', '')) = $${paramIndex + 1} OR
+      LOWER(REPLACE(c.name, ' ', '')) = $${paramIndex + 1} OR
+      LOWER(c.name) = $${paramIndex + 2}
+    )`);
+    params.push(category.toLowerCase()); // exact slug match
+    params.push(normalizedCategory); // normalized match (no hyphens)
+    params.push(category.toLowerCase().replace(/-/g, ' ')); // "t-shirts" -> "t shirts"
+    paramIndex += 3;
   }
 
   if (minPrice) {
@@ -86,7 +93,6 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   
-  // FIXED: Now uses p.image_url directly instead of subquery from product_images
   const query = `
     SELECT 
       p.id,
@@ -172,7 +178,6 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
 router.get('/featured', optionalAuth, asyncHandler(async (req, res) => {
   const { limit = 8 } = req.query;
 
-  // FIXED: Now uses p.image_url directly
   const query = `
     SELECT 
       p.id,
