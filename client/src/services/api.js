@@ -303,7 +303,7 @@ export const userAPI = {
 export const productsAPI = {
   getAll: (params) => api.get('/products', { params }),
   getById: (id) => api.get(`/products/${id}`),
-  getBySlug: (slug) => api.get(`/products/slug/${slug}`),
+  getBySlug: (slug) => api.get(`/products/${slug}`),
   getFeatured: () => api.get('/products/featured'),
   search: (query) => api.get('/products/search', { params: { q: query } }),
 };
