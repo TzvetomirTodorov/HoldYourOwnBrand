@@ -1,6 +1,6 @@
 // HYOW E-commerce API Service
 // This service handles all communication with the backend API
-// 
+//
 // FIXED: Auth interceptor now properly distinguishes between:
 // - Network errors (don't logout - could be temporary)
 // - CORS/blocked errors (don't logout - might be ad blocker)
@@ -14,7 +14,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 /**
  * Read auth tokens from Zustand's persist storage location
  * Zustand persist middleware stores state at: localStorage['hyow-auth'].state
- * 
+ *
  * IMPORTANT: This must match the key used in authStore.js persist config
  */
 const getAuthFromStorage = () => {
@@ -119,18 +119,18 @@ const processQueue = (error, token = null) => {
 
 /**
  * Response interceptor - handles token refresh on 401 errors
- * 
+ *
  * CRITICAL FIX: This interceptor now properly distinguishes between different error types:
- * 
+ *
  * 1. NO RESPONSE (network error, CORS, blocked by ad blocker):
  *    - DO NOT treat as auth failure
  *    - Just reject the promise so the calling code can handle it
  *    - User stays logged in
- * 
+ *
  * 2. 401 from auth endpoints (/auth/login, /auth/refresh, etc.):
  *    - Skip refresh attempt (would cause infinite loop)
  *    - Just reject the promise
- * 
+ *
  * 3. 401 from other endpoints:
  *    - Try to refresh the token
  *    - If refresh succeeds: retry original request
@@ -140,7 +140,7 @@ const processQueue = (error, token = null) => {
 api.interceptors.response.use(
   // Success handler - just pass through
   (response) => response,
-  
+
   // Error handler
   async (error) => {
     const originalRequest = error.config;
@@ -219,7 +219,7 @@ api.interceptors.response.use(
       });
 
       // Extract new tokens (handle both response formats)
-      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = 
+      const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
         response.data.tokens || response.data;
 
       // Update tokens in storage
@@ -233,7 +233,7 @@ api.interceptors.response.use(
 
       // Retry the original request
       return api(originalRequest);
-      
+
     } catch (refreshError) {
       // Refresh failed
       processQueue(refreshError, null);
@@ -243,11 +243,11 @@ api.interceptors.response.use(
       // ═══════════════════════════════════════════════════════════════
       // If refreshError has no response, it's a network error during refresh
       // - Don't logout (might just be temporary network issue)
-      // 
+      //
       // If refreshError.response.status is 401 or 403, the server explicitly
       // said "this refresh token is invalid" - NOW we can logout
-      const serverExplicitlyRejected = 
-        refreshError.response && 
+      const serverExplicitlyRejected =
+        refreshError.response &&
         (refreshError.response.status === 401 || refreshError.response.status === 403);
 
       if (serverExplicitlyRejected) {
@@ -338,10 +338,11 @@ export const ordersAPI = {
 };
 
 // WISHLIST API
+// FIXED: Routes are under /users/wishlist, productId goes in URL path (not request body)
 export const wishlistAPI = {
-  get: () => api.get('/wishlist'),
-  add: (productId) => api.post('/wishlist', { productId }),
-  remove: (productId) => api.delete(`/wishlist/${productId}`),
+  get: () => api.get('/users/wishlist'),
+  add: (productId) => api.post(`/users/wishlist/${productId}`),
+  remove: (productId) => api.delete(`/users/wishlist/${productId}`),
 };
 
 // CHECKOUT API (Stripe Integration)
