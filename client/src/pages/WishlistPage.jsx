@@ -11,7 +11,6 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, ShoppingBag, Trash2, Loader2, HeartOff, ArrowRight } from 'lucide-react';
 import { wishlistAPI } from '../services/api';
-import { useCartStore } from '../store/cartStore';
 import { useNotificationStore } from '../store/notificationStore';
 
 function WishlistPage() {
@@ -19,10 +18,6 @@ function WishlistPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [removingIds, setRemovingIds] = useState(new Set());
-  const [addingToCartIds, setAddingToCartIds] = useState(new Set());
-
-  // Cart store
-  const addItem = useCartStore((state) => state.addItem);
 
   // Notification store
   const showSuccess = useNotificationStore((state) => state.showSuccess);
@@ -38,7 +33,8 @@ function WishlistPage() {
       setIsLoading(true);
       setError(null);
       const response = await wishlistAPI.get();
-      setWishlistItems(response.data.items || response.data || []);
+      // Backend returns { products: [...] }
+      setWishlistItems(response.data.products || []);
     } catch (err) {
       console.error('Failed to fetch wishlist:', err);
       setError('Failed to load your wishlist. Please try again.');
@@ -52,39 +48,14 @@ function WishlistPage() {
       setRemovingIds((prev) => new Set([...prev, productId]));
       await wishlistAPI.remove(productId);
       
-      // Remove from local state
-      setWishlistItems((prev) => prev.filter((item) => item.productId !== productId && item.id !== productId));
+      // Remove from local state - backend returns 'id' not 'productId'
+      setWishlistItems((prev) => prev.filter((item) => item.id !== productId));
       showSuccess?.('Removed from wishlist');
     } catch (err) {
       console.error('Failed to remove from wishlist:', err);
       showError?.('Failed to remove item. Please try again.');
     } finally {
       setRemovingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(productId);
-        return next;
-      });
-    }
-  };
-
-  const handleAddToCart = async (item) => {
-    const productId = item.productId || item.id;
-    const variantId = item.variantId || item.variants?.[0]?.id;
-
-    if (!variantId) {
-      showError?.('Please select a size/color on the product page');
-      return;
-    }
-
-    try {
-      setAddingToCartIds((prev) => new Set([...prev, productId]));
-      await addItem(productId, variantId, 1);
-      showSuccess?.(`${item.name || item.productName} added to cart!`);
-    } catch (err) {
-      console.error('Failed to add to cart:', err);
-      showError?.('Failed to add to cart. Please try again.');
-    } finally {
-      setAddingToCartIds((prev) => {
         const next = new Set(prev);
         next.delete(productId);
         return next;
@@ -165,24 +136,19 @@ function WishlistPage() {
         {/* Wishlist Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {wishlistItems.map((item) => {
-            const productId = item.productId || item.id;
-            const isRemoving = removingIds.has(productId);
-            const isAddingToCart = addingToCartIds.has(productId);
-            const productName = item.name || item.productName;
-            const productSlug = item.slug || item.productSlug || productId;
-            const productImage = item.imageUrl || item.image_url || item.image || '/placeholder.jpg';
-            const productPrice = item.price || item.productPrice || 0;
+            // Backend returns: id, name, slug, price, image_url
+            const isRemoving = removingIds.has(item.id);
 
             return (
               <div
-                key={productId}
+                key={item.id}
                 className="group bg-white border border-street-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-300"
               >
                 {/* Product Image */}
-                <Link to={`/products/${productSlug}`} className="block relative aspect-square overflow-hidden">
+                <Link to={`/products/${item.slug}`} className="block relative aspect-square overflow-hidden">
                   <img
-                    src={productImage}
-                    alt={productName}
+                    src={item.image_url || '/placeholder.jpg'}
+                    alt={item.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={(e) => {
                       e.target.src = '/placeholder.jpg';
@@ -193,7 +159,7 @@ function WishlistPage() {
                   <button
                     onClick={(e) => {
                       e.preventDefault();
-                      handleRemoveFromWishlist(productId);
+                      handleRemoveFromWishlist(item.id);
                     }}
                     disabled={isRemoving}
                     className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50"
@@ -209,38 +175,24 @@ function WishlistPage() {
 
                 {/* Product Info */}
                 <div className="p-4">
-                  <Link to={`/products/${productSlug}`}>
+                  <Link to={`/products/${item.slug}`}>
                     <h3 className="font-display text-lg tracking-wider mb-1 hover:text-street-600 transition-colors line-clamp-1">
-                      {productName}
+                      {item.name}
                     </h3>
                   </Link>
                   
                   <p className="text-street-900 font-semibold mb-4">
-                    ${parseFloat(productPrice).toFixed(2)}
+                    ${parseFloat(item.price).toFixed(2)}
                   </p>
 
                   {/* Action Buttons */}
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => handleAddToCart(item)}
-                      disabled={isAddingToCart}
-                      className="flex-1 btn-primary text-sm py-2 flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isAddingToCart ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <>
-                          <ShoppingBag className="w-4 h-4" />
-                          Add to Cart
-                        </>
-                      )}
-                    </button>
-                    
                     <Link
-                      to={`/products/${productSlug}`}
-                      className="btn-secondary text-sm py-2 px-4"
+                      to={`/products/${item.slug}`}
+                      className="flex-1 btn-primary text-sm py-2 flex items-center justify-center gap-2"
                     >
-                      View
+                      <ShoppingBag className="w-4 h-4" />
+                      View & Add to Cart
                     </Link>
                   </div>
                 </div>
