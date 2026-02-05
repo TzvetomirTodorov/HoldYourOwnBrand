@@ -1,0 +1,175 @@
+/**
+ * HYOW Theme Variables
+ * 
+ * Add this to your main CSS file (index.css or globals.css)
+ * Works with Tailwind CSS dark mode class strategy
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE THEME VARIABLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Light Mode (Default) */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f8f8f8;
+  --color-bg-tertiary: #f0f0f0;
+  --color-bg-card: #ffffff;
+  --color-bg-elevated: #ffffff;
+  
+  --color-text-primary: #0a0a0a;
+  --color-text-secondary: #525252;
+  --color-text-muted: #737373;
+  --color-text-inverse: #ffffff;
+  
+  --color-accent: #0a0a0a;
+  --color-accent-hover: #262626;
+  
+  --color-border: #e5e5e5;
+  --color-border-hover: #d4d4d4;
+  
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-shadow: rgba(0, 0, 0, 0.1);
+  
+  /* Transitions */
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Dark Mode */
+.dark,
+[data-theme="dark"] {
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #141414;
+  --color-bg-tertiary: #1a1a1a;
+  --color-bg-card: #141414;
+  --color-bg-elevated: #1f1f1f;
+  
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a3a3a3;
+  --color-text-muted: #737373;
+  --color-text-inverse: #0a0a0a;
+  
+  --color-accent: #fafafa;
+  --color-accent-hover: #e5e5e5;
+  
+  --color-border: #262626;
+  --color-border-hover: #404040;
+  
+  --color-success: #4ade80;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+  
+  --color-overlay: rgba(0, 0, 0, 0.8);
+  --color-shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLOBAL STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
+}
+
+/* Smooth theme transitions */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Disable transitions on page load to prevent flash */
+.no-transitions * {
+  transition: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Background colors */
+.bg-theme-primary { background-color: var(--color-bg-primary); }
+.bg-theme-secondary { background-color: var(--color-bg-secondary); }
+.bg-theme-tertiary { background-color: var(--color-bg-tertiary); }
+.bg-theme-card { background-color: var(--color-bg-card); }
+.bg-theme-elevated { background-color: var(--color-bg-elevated); }
+
+/* Text colors */
+.text-theme-primary { color: var(--color-text-primary); }
+.text-theme-secondary { color: var(--color-text-secondary); }
+.text-theme-muted { color: var(--color-text-muted); }
+.text-theme-inverse { color: var(--color-text-inverse); }
+
+/* Border colors */
+.border-theme { border-color: var(--color-border); }
+.border-theme-hover:hover { border-color: var(--color-border-hover); }
+
+/* Accent colors */
+.bg-theme-accent { background-color: var(--color-accent); }
+.text-theme-accent { color: var(--color-accent); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CUSTOM SCROLLBAR (Dark Mode Aware)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-hover);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) var(--color-bg-secondary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SELECTION HIGHLIGHT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FOCUS STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
